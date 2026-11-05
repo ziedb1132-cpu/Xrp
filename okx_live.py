@@ -149,6 +149,27 @@ def process_live(signal_state):
     if live.get("halted"):
         return {"enabled": True, "status": "halted", "reason": live.get("halt_reason", "manual halt")}
 
+    # Re-check accepted orders every cycle until OKX confirms active protection.
+    pending = next((x for x in reversed(live.get("orders", [])) if x.get("status") == "protection_check_pending"), None)
+    if pending:
+        try:
+            api = OKX()
+            verification = api.verify_protection(pending["clOrdId"])
+            if verification.get("verified"):
+                pending.update(status="protection_verified", verification=verification)
+                live["last_status"] = "protection_verified"
+                _save(live)
+            else:
+                pending.update(verification=verification)
+                _save(live)
+                return {"enabled": True, "status": "protection_check_pending", "signal_id": pending.get("signal_id"), "protection": verification}
+        except Exception as exc:
+            live["halted"] = True
+            live["halt_reason"] = str(exc)[:500]
+            pending.update(status="error_halted", error=str(exc)[:500])
+            _save(live)
+            return {"enabled": True, "status": "error_halted", "signal_id": pending.get("signal_id"), "reason": str(exc)[:300]}
+
     signal = signal_state.get("open_signal")
     if not isinstance(signal, dict) or signal.get("status") != "OPEN":
         return {"enabled": True, "status": "waiting"}
