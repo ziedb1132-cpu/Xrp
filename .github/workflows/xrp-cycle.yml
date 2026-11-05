@@ -18,6 +18,7 @@ jobs:
         with:
           ref: main
           persist-credentials: true
+          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
@@ -29,7 +30,6 @@ jobs:
         run: |
           python -m compileall -q ai_model.py feature_engine.py news_engine.py run_cycle.py signal_manager.py xrp_engine.py state_storage.py strategy_engine.py okx_live.py
           python - <<'PY'
-          import math
           from feature_engine import build_features
           from ai_model import gate_status
           from strategy_engine import evaluate_strategies
@@ -60,21 +60,63 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPOSITORY: ${{ github.repository }}
         run: |
-          set -e
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
           for i in $(seq 1 100); do
             python run_cycle.py
             python state_storage.py pack
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
             git add -A
-            git commit -m "Persist XRP cycle $i [skip ci]" || true
+            if ! git diff --cached --quiet; then
+              git commit -m "Persist XRP cycle $i [skip ci]"
+            fi
+
             pushed=0
-            for attempt in 1 2 3; do
-              git pull --rebase origin main
-              if git push origin HEAD:main; then pushed=1; break; fi
-              sleep 3
+            delay=2
+            for attempt in $(seq 1 8); do
+              # Rebase the saved cycle onto the newest main before every push.
+              git fetch --no-tags origin main
+              if ! git rebase origin/main; then
+                git rebase --abort || true
+                echo "PERSIST_REBASE_FAILED cycle=$i attempt=$attempt"
+                exit 1
+              fi
+
+              if git push origin HEAD:main; then
+                pushed=1
+                echo "PERSIST_OK cycle=$i attempt=$attempt"
+                break
+              fi
+
+              echo "PERSIST_RETRY cycle=$i attempt=$attempt wait=${delay}s"
+              sleep "$delay"
+              if [ "$delay" -lt 60 ]; then delay=$((delay * 2)); fi
             done
-            if [ "$pushed" -ne 1 ]; then echo "PERSIST_PUSH_FAILED cycle=$i"; exit 1; fi
+
+            if [ "$pushed" -ne 1 ]; then
+              echo "PERSIST_PUSH_FAILED cycle=$i; local state will be uploaded as a recovery artifact"
+              exit 1
+            fi
             sleep 60
           done
+
           gh workflow run xrp-cycle.yml --repo "$GH_REPOSITORY" --ref main
+
+      - name: Upload recovery state if persistence fails
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: xrp-recovery-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            xrp_state.json
+            xrp_summary.json
+            strategy_history.json
+            xrp_live_state.json
+            xrp_model.pt
+            xrp_exit_policy.pt
+            *.parts/
+            *.parts.json
+          if-no-files-found: warn
+          retention-days: 14
