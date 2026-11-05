@@ -75,33 +75,129 @@ class OKX:
         rows = self.request("GET", path)
         return rows[0] if rows else None
 
-    def verify_protection(self, cl_id):
-        """Verify filled parent order and its actually active OCO/conditional protection."""
+    def xrp_balance(self):
+        rows = self.request("GET", "/api/v5/account/balance?ccy=XRP")
+        detail = next((x for x in (rows[0].get("details", []) if rows else []) if x.get("ccy") == "XRP"), {})
+        available = _d(detail.get("availBal") or "0")
+        frozen = _d(detail.get("frozenBal") or "0")
+        total = _d(detail.get("cashBal")) if detail.get("cashBal") not in (None, "") else available + frozen
+        return {"available": available, "total": total}
+
+    def cancel_order(self, cl_id, order_id=None):
+        body = {"instId": INST, "ordId": str(order_id)} if order_id else {"instId": INST, "clOrdId": cl_id}
+        rows = self.request("POST", "/api/v5/trade/cancel-order", body)
+        if not rows or rows[0].get("sCode") != "0":
+            raise OKXError("Could not cancel remaining XRP buy quantity: " + str(rows))
+        return rows[0]
+
+    def pending_algos(self):
+        found = []
+        for kind in ("oco", "conditional"):
+            path = "/api/v5/trade/orders-algo-pending?" + urlencode({"ordType": kind, "instId": INST})
+            found.extend(self.request("GET", path))
+        return found
+
+    def place_recovery_oco(self, signal, size, client_id):
+        tp, sl, entry = _d(signal.get("tp")), _d(signal.get("sl")), _d(signal.get("entry"))
+        if not (tp > entry > sl > 0):
+            raise OKXError("Invalid TP/SL levels; refusing recovery OCO.")
+        body = {"instId": INST, "tdMode": "cash", "side": "sell", "ordType": "oco",
+                "sz": format(size, "f"), "algoClOrdId": client_id,
+                "tpTriggerPx": format(tp, "f"), "tpOrdPx": "-1", "tpTriggerPxType": "last",
+                "slTriggerPx": format(sl, "f"), "slOrdPx": "-1", "slTriggerPxType": "last"}
+        rows = self.request("POST", "/api/v5/trade/order-algo", body)
+        if not rows or rows[0].get("sCode") != "0" or not rows[0].get("algoId"):
+            raise OKXError("OKX rejected recovery OCO: " + str(rows))
+        return rows[0]
+
+    def verify_protection(self, cl_id, record=None):
+        """Confirm attached OCO or recover with a balance-delta-verified independent OCO."""
         order = self.get_order(cl_id)
         if not order:
             return {"verified": False, "state": "not_found"}
         state = str(order.get("state", "")).lower()
         filled = _d(order.get("accFillSz") or "0")
-        if state == "partially_filled" or (filled > 0 and state != "filled"):
-            raise OKXError("URGENT: XRP order is partially filled. Live protection is not verified; trading halted. Inspect OKX and manage the filled XRP manually.")
-        if state != "filled":
+        if state in ("live", "partially_filled") and filled > 0:
+            self.cancel_order(cl_id, order.get("ordId"))
+            order = self.get_order(cl_id)
+            if not order:
+                return {"verified": False, "state": "cancel_reconciliation_pending"}
+            state = str(order.get("state", "")).lower()
+            filled = _d(order.get("accFillSz") or "0")
+        if state in ("live", "partially_filled"):
+            return {"verified": False, "state": "cancel_reconciliation_pending"}
+        if state not in ("filled", "canceled", "mmp_canceled"):
             return {"verified": False, "state": state or "unknown"}
-        expected_algo_id = ("p" + cl_id[1:])[:32]
-        found = []
-        for algo_type in ("conditional", "oco"):
-            path = "/api/v5/trade/orders-algo-pending?" + urlencode({"ordType": algo_type, "instId": INST})
-            found.extend(self.request("GET", path))
-        matches = [x for x in found if x.get("algoClOrdId") == expected_algo_id]
-        if not matches:
-            raise OKXError("URGENT: XRP buy filled but no active attached TP/SL algo found at OKX. Trading halted; inspect account immediately.")
-        algo = matches[0]
-        tp_ok = _d(algo.get("tpTriggerPx") or "0") > 0 and bool(algo.get("tpOrdPx"))
-        sl_ok = _d(algo.get("slTriggerPx") or "0") > 0 and bool(algo.get("slOrdPx"))
-        if not (tp_ok and sl_ok):
-            raise OKXError("URGENT: active OKX algo does not confirm both TP and SL triggers. Trading halted; inspect account immediately.")
+        if filled <= 0:
+            return {"verified": False, "state": "canceled_no_fill"}
+        expected = ("p" + cl_id[3:])[:32]
+        algos = self.pending_algos()
+        matches = [x for x in algos if x.get("algoClOrdId") == expected]
+        if matches:
+            algo = matches[0]
+            tp_ok = _d(algo.get("tpTriggerPx")) > 0 and _d(algo.get("tpOrdPx")) == Decimal("-1")
+            sl_ok = _d(algo.get("slTriggerPx")) > 0 and _d(algo.get("slOrdPx")) == Decimal("-1")
+            algo_size = _d(algo.get("sz") or "0")
+            meta = self.instrument()
+            lot = _d(meta.get("lotSz", "0.0001"))
+            if (str(algo.get("ordType")) != "oco" or str(algo.get("side")) != "sell"
+                    or not (tp_ok and sl_ok) or abs(algo_size - filled) > max(lot, filled * Decimal("0.01"))):
+                raise OKXError("URGENT: attached algo is not a correctly sized sell OCO with both TP and SL.")
+            return {"verified": True, "state": state, "algo_id": algo.get("algoId"),
+                    "algo_client_id": expected, "tp_trigger": algo.get("tpTriggerPx"),
+                    "sl_trigger": algo.get("slTriggerPx"), "algo_type": "oco", "size": algo.get("sz")}
+        # An attached OCO may already have triggered and disappeared from the pending list.
+        attached_path = "/api/v5/trade/order-algo?" + urlencode({"instId": INST, "algoClOrdId": expected})
+        attached_history = self.request("GET", attached_path)
+        if attached_history:
+            attached = attached_history[0]
+            tp_ok = _d(attached.get("tpTriggerPx") or "0") > 0 and _d(attached.get("tpOrdPx") or "0") == Decimal("-1")
+            sl_ok = _d(attached.get("slTriggerPx") or "0") > 0 and _d(attached.get("slOrdPx") or "0") == Decimal("-1")
+            attached_size = _d(attached.get("sz") or "0")
+            meta = self.instrument()
+            lot = _d(meta.get("lotSz", "0.0001"))
+            if (str(attached.get("state", "")).lower() == "live" and str(attached.get("ordType")) == "oco"
+                    and str(attached.get("side")) == "sell" and tp_ok and sl_ok
+                    and abs(attached_size - filled) <= max(lot, filled * Decimal("0.01"))):
+                return {"verified": True, "state": state, "algo_id": attached.get("algoId"),
+                        "algo_client_id": expected, "tp_trigger": attached.get("tpTriggerPx"),
+                        "sl_trigger": attached.get("slTriggerPx"), "algo_type": "oco", "size": attached.get("sz")}
+            raise OKXError("URGENT: attached OCO is no longer active; manual exit reconciliation is required.")
+        if record is None or "baseline_xrp_total" not in record or not isinstance(record.get("signal"), dict):
+            raise OKXError("URGENT: cannot prove XRP ownership for recovery OCO; manual inspection required.")
+        if algos:
+            raise OKXError("URGENT: other XRP algo orders exist; refusing overlapping recovery sell.")
+        pending_path = "/api/v5/trade/orders-pending?" + urlencode({"instType": "SPOT", "instId": INST})
+        if self.request("GET", pending_path):
+            raise OKXError("URGENT: other XRP spot orders exist; refusing overlapping recovery sell.")
+        balance = self.xrp_balance()
+        acquired = balance["total"] - _d(record["baseline_xrp_total"])
+        meta = self.instrument()
+        lot, minimum = _d(meta.get("lotSz", "0.0001")), _d(meta.get("minSz", "0"))
+        tolerance = max(lot, filled * Decimal("0.01"))
+        if acquired <= 0 or abs(filled - acquired) > tolerance:
+            raise OKXError("URGENT: XRP balance delta does not match this order fill; cannot prove sell quantity.")
+        size = (min(acquired, balance["available"]) / lot).to_integral_value(rounding=ROUND_DOWN) * lot
+        if size < minimum:
+            raise OKXError("URGENT: acquired XRP is not freely available or is below minimum order size.")
+        recovery_id = ("r" + cl_id[3:])[:32]
+        path = "/api/v5/trade/order-algo?" + urlencode({"instId": INST, "algoClOrdId": recovery_id})
+        existing = self.request("GET", path)
+        if existing:
+            algo = existing[0]
+        else:
+            placed = self.place_recovery_oco(record["signal"], size, recovery_id)
+            algo_rows = self.request("GET", "/api/v5/trade/order-algo?" + urlencode({"instId": INST, "algoId": placed["algoId"]}))
+            algo = algo_rows[0] if algo_rows else {}
+        tp_ok = _d(algo.get("tpTriggerPx")) > 0 and _d(algo.get("tpOrdPx")) == Decimal("-1")
+        sl_ok = _d(algo.get("slTriggerPx")) > 0 and _d(algo.get("slOrdPx")) == Decimal("-1")
+        if (not algo or str(algo.get("state", "")).lower() != "live"
+                or str(algo.get("ordType")) != "oco" or str(algo.get("side")) != "sell"
+                or not (tp_ok and sl_ok)):
+            raise OKXError("URGENT: recovery OCO was not confirmed active by OKX.")
         return {"verified": True, "state": state, "algo_id": algo.get("algoId"),
-                "algo_client_id": expected_algo_id, "tp_trigger": algo.get("tpTriggerPx"),
-                "sl_trigger": algo.get("slTriggerPx"), "algo_type": algo.get("ordType")}
+                "algo_client_id": recovery_id, "tp_trigger": algo.get("tpTriggerPx"),
+                "sl_trigger": algo.get("slTriggerPx"), "algo_type": "oco", "size": algo.get("sz")}
 
     def market_buy_with_protection(self, signal, quote_amount, cl_id):
         tp = _d(signal.get("tp", 0))
@@ -154,7 +250,7 @@ def process_live(signal_state):
     if pending:
         try:
             api = OKX()
-            verification = api.verify_protection(pending["clOrdId"])
+            verification = api.verify_protection(pending["clOrdId"], pending)
             if verification.get("verified"):
                 pending.update(status="protection_verified", verification=verification)
                 live["last_status"] = "protection_verified"
@@ -169,6 +265,23 @@ def process_live(signal_state):
             pending.update(status="error_halted", error=str(exc)[:500])
             _save(live)
             return {"enabled": True, "status": "error_halted", "signal_id": pending.get("signal_id"), "reason": str(exc)[:300]}
+
+    # Never stack a new live buy while an earlier protective OCO is still active.
+    previous = next((x for x in reversed(live.get("orders", [])) if x.get("status") == "protection_verified"), None)
+    if previous:
+        try:
+            api = OKX()
+            algo_id = (previous.get("verification") or {}).get("algo_id")
+            if not algo_id:
+                raise OKXError("Previous XRP position has no recorded protective OCO ID.")
+            if any(x.get("algoId") == algo_id for x in api.pending_algos()):
+                return {"enabled": True, "status": "position_open", "algo_id": algo_id}
+            raise OKXError("Previous XRP OCO is no longer pending. Verify its sell fill and remaining XRP manually before allowing another buy.")
+        except Exception as exc:
+            live["halted"] = True
+            live["halt_reason"] = str(exc)[:500]
+            _save(live)
+            return {"enabled": True, "status": "error_halted", "reason": str(exc)[:300]}
 
     signal = signal_state.get("open_signal")
     if not isinstance(signal, dict) or signal.get("status") != "OPEN":
@@ -189,6 +302,10 @@ def process_live(signal_state):
         api = OKX()
         available = api.available_usdt()
         budget = (available * Decimal("0.10")).quantize(Decimal("0.01"), rounding=ROUND_DOWN)
+        record = live["orders"][-1]
+        record["baseline_xrp_total"] = str(api.xrp_balance()["total"])
+        record["signal"] = {k: signal.get(k) for k in ("entry", "tp", "sl")}
+        _save(live)
         if budget <= 0:
             raise OKXError("No available USDT balance.")
         # Reconcile by client ID before sending; protects against a lost response/restart.
@@ -201,8 +318,11 @@ def process_live(signal_state):
             status = "accepted"
         live["orders"][-1].update(status="protection_check_pending", order_id=result.get("ordId"), quote_budget=str(budget), response_state=result.get("state"))
         _save(live)
-        verification = api.verify_protection(cl_id)
-        live["orders"][-1].update(status="protection_verified" if verification["verified"] else "protection_check_pending", verification=verification, response_state=verification.get("state"))
+        verification = api.verify_protection(cl_id, live["orders"][-1])
+        if verification.get("state") == "canceled_no_fill":
+            live["orders"][-1].update(status="canceled_no_fill", verification=verification)
+        else:
+            live["orders"][-1].update(status="protection_verified" if verification["verified"] else "protection_check_pending", verification=verification, response_state=verification.get("state"))
         live["last_status"] = live["orders"][-1]["status"]
         _save(live)
         return {"enabled": True, "status": live["last_status"], "signal_id": sid, "order_id": result.get("ordId"), "budget_usdt": str(budget), "protection": verification}
