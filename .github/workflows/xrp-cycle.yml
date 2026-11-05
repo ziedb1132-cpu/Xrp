@@ -1,0 +1,76 @@
+name: XRP AI 100-cycle runner
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 */4 * * *"
+permissions:
+  contents: write
+  actions: write
+concurrency:
+  group: xrp-paper-engine
+  cancel-in-progress: false
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Restore split state if present
+        run: python state_storage.py restore
+      - name: Validate code and feature schema
+        run: |
+          python -m compileall -q ai_model.py feature_engine.py news_engine.py run_cycle.py signal_manager.py xrp_engine.py state_storage.py strategy_engine.py
+          python - <<'PY'
+          import math
+          from feature_engine import build_features
+          from ai_model import gate_status
+          from strategy_engine import evaluate_strategies
+          candles=[]
+          for i in range(300):
+              p=100+i*0.02
+              candles.append({"ts":i,"o":p-0.01,"h":p+0.05,"l":p-0.05,"c":p,"vol":1000+i})
+          features=build_features(candles,{"trend":0.01,"volatility":0.002},{"imbalance":0.1,"spread_pct":0.02},0.05)
+          assert len(features)==1205, f"Expected 1205 features, got {len(features)}"
+          assert len(evaluate_strategies(candles))==8, "Expected 8 strategy families"
+          sample={k:0.001 for k in features}
+          closed=[{"status":"TP","features":sample,"feature_version":"xrp-1200-v2"} for _ in range(10)]
+          assert not gate_status(closed[:9])["enabled"], "AI gate opened before 10 closes"
+          assert gate_status(closed)["enabled"], "AI gate did not open at 10 compatible closes"
+          invalid=dict(sample);invalid[next(iter(invalid))]=float("nan")
+          bad=[{"status":"TP","features":invalid,"feature_version":"xrp-1200-v2"} for _ in range(10)]
+          assert not gate_status(bad)["enabled"], "AI gate accepted non-finite features"
+          wrong=[{"status":"TP","features":sample,"feature_version":"wrong-version"} for _ in range(10)]
+          assert not gate_status(wrong)["enabled"], "AI gate accepted an incompatible feature version"
+          print("PREFLIGHT_OK features=1205 strategies=8 ai_gate=10 finite/version_checked")
+          PY
+      - name: Execute 100 cycles and persist every cycle
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPOSITORY: ${{ github.repository }}
+        run: |
+          set -e
+          for i in $(seq 1 100); do
+            python run_cycle.py
+            python state_storage.py pack
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add -A
+            git commit -m "Persist XRP cycle $i [skip ci]" || true
+            pushed=0
+            for attempt in 1 2 3; do
+              git pull --rebase origin main
+              if git push origin HEAD:main; then pushed=1; break; fi
+              sleep 3
+            done
+            if [ "$pushed" -ne 1 ]; then echo "PERSIST_PUSH_FAILED cycle=$i"; exit 1; fi
+            sleep 60
+          done
+          gh workflow run xrp-cycle.yml --repo "$GH_REPOSITORY" --ref main
