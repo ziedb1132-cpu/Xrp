@@ -130,7 +130,7 @@ class OKX:
             return {"verified": False, "state": state or "unknown"}
         if filled <= 0:
             return {"verified": False, "state": "canceled_no_fill"}
-        expected = ("p" + cl_id[1:])[:32]
+        expected = ("p" + cl_id[3:])[:32]
         algos = self.pending_algos()
         matches = [x for x in algos if x.get("algoClOrdId") == expected]
         if matches:
@@ -180,7 +180,7 @@ class OKX:
         size = (min(acquired, balance["available"]) / lot).to_integral_value(rounding=ROUND_DOWN) * lot
         if size < minimum:
             raise OKXError("URGENT: acquired XRP is not freely available or is below minimum order size.")
-        recovery_id = ("r" + cl_id[1:])[:32]
+        recovery_id = ("r" + cl_id[3:])[:32]
         path = "/api/v5/trade/order-algo?" + urlencode({"instId": INST, "algoClOrdId": recovery_id})
         existing = self.request("GET", path)
         if existing:
