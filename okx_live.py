@@ -229,7 +229,7 @@ class OKX:
             raise OKXError("Order rejected: " + str(rows[0].get("sMsg") if rows else "empty response"))
         return rows[0]
 
-def process_live(signal_state):
+def _process_live(signal_state):
     """Process only newly created paper signals; never imports the pre-existing open signal."""
     if os.getenv("XRP_LIVE_TRADING_ENABLED", "false").strip().lower() != "true":
         return {"enabled": False, "status": "disabled"}
@@ -333,3 +333,40 @@ def process_live(signal_state):
         live["orders"][-1].update(status="error_halted", error=str(exc)[:500])
         _save(live)
         return {"enabled": True, "status": "error_halted", "signal_id": sid, "reason": str(exc)[:300]}
+
+
+def process_live(signal_state):
+    """Run one live-execution check and persist its outcome for dashboard/audit use."""
+    started_at = int(time.time())
+    signal = signal_state.get("open_signal") if isinstance(signal_state, dict) else None
+    signal_id = signal.get("id") if isinstance(signal, dict) else None
+    result = None
+    error = None
+    try:
+        result = _process_live(signal_state)
+        return result
+    except Exception as exc:
+        error = str(exc)[:500]
+        raise
+    finally:
+        # Audit every cycle, including disabled/waiting/initialized outcomes. This is
+        # deliberately separate from order records and never triggers another request.
+        live = _state()
+        outcome = result if isinstance(result, dict) else {}
+        attempt = {
+            "timestamp": started_at,
+            "enabled": os.getenv("XRP_LIVE_TRADING_ENABLED", "false").strip().lower() == "true",
+            "signal_id": outcome.get("signal_id", signal_id),
+            "status": outcome.get("status", "exception" if error else "unknown"),
+        }
+        for key in ("order_id", "algo_id", "budget_usdt", "reason", "protection"):
+            if key in outcome:
+                attempt[key] = outcome[key]
+        if error:
+            attempt["error"] = error
+        attempts = live.setdefault("attempts", [])
+        attempts.append(attempt)
+        # Keep the audit file bounded while retaining recent cycle-by-cycle outcomes.
+        live["attempts"] = attempts[-500:]
+        live["last_attempt"] = attempt
+        _save(live)
