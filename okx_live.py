@@ -142,6 +142,16 @@ class OKX:
             return {"verified": True, "state": state, "algo_id": algo.get("algoId"),
                     "algo_client_id": expected, "tp_trigger": algo.get("tpTriggerPx"),
                     "sl_trigger": algo.get("slTriggerPx"), "algo_type": "oco", "size": algo.get("sz")}
+        # An attached OCO may already have triggered and disappeared from the pending list.
+        attached_path = "/api/v5/trade/order-algo?" + urlencode({"algoClOrdId": expected})
+        attached_history = self.request("GET", attached_path)
+        if attached_history:
+            attached = attached_history[0]
+            if str(attached.get("state", "")).lower() == "live" and str(attached.get("ordType")) == "oco" and str(attached.get("side")) == "sell":
+                return {"verified": True, "state": state, "algo_id": attached.get("algoId"),
+                        "algo_client_id": expected, "tp_trigger": attached.get("tpTriggerPx"),
+                        "sl_trigger": attached.get("slTriggerPx"), "algo_type": "oco", "size": attached.get("sz")}
+            raise OKXError("URGENT: attached OCO is no longer active; manual exit reconciliation is required.")
         if record is None or "baseline_xrp_total" not in record or not isinstance(record.get("signal"), dict):
             raise OKXError("URGENT: cannot prove XRP ownership for recovery OCO; manual inspection required.")
         if algos:
@@ -242,6 +252,23 @@ def process_live(signal_state):
             pending.update(status="error_halted", error=str(exc)[:500])
             _save(live)
             return {"enabled": True, "status": "error_halted", "signal_id": pending.get("signal_id"), "reason": str(exc)[:300]}
+
+    # Never stack a new live buy while an earlier protective OCO is still active.
+    previous = next((x for x in reversed(live.get("orders", [])) if x.get("status") == "protection_verified"), None)
+    if previous:
+        try:
+            api = OKX()
+            algo_id = (previous.get("verification") or {}).get("algo_id")
+            if not algo_id:
+                raise OKXError("Previous XRP position has no recorded protective OCO ID.")
+            if any(x.get("algoId") == algo_id for x in api.pending_algos()):
+                return {"enabled": True, "status": "position_open", "algo_id": algo_id}
+            raise OKXError("Previous XRP OCO is no longer pending. Verify its sell fill and remaining XRP manually before allowing another buy.")
+        except Exception as exc:
+            live["halted"] = True
+            live["halt_reason"] = str(exc)[:500]
+            _save(live)
+            return {"enabled": True, "status": "error_halted", "reason": str(exc)[:300]}
 
     signal = signal_state.get("open_signal")
     if not isinstance(signal, dict) or signal.get("status") != "OPEN":
