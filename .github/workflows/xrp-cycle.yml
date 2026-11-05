@@ -53,6 +53,10 @@ jobs:
           PY
       - name: Execute 100 cycles and persist every cycle
         env:
+          OKX_API_KEY: ${{ secrets.OKX_API_KEY }}
+          OKX_SECRET_KEY: ${{ secrets.OKX_SECRET_KEY }}
+          OKX_PASSPHRASE: ${{ secrets.OKX_PASSPHRASE }}
+          XRP_LIVE_TRADING_ENABLED: ${{ vars.XRP_LIVE_TRADING_ENABLED || 'false' }}
           GH_TOKEN: ${{ github.token }}
           GH_REPOSITORY: ${{ github.repository }}
         run: |
