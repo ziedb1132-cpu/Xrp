@@ -1,7 +1,7 @@
 """Split every persisted XRP runtime artifact above 90 MiB and verify on restore."""
 import hashlib,json,os,shutil
 from pathlib import Path
-ARTIFACTS=("xrp_state.json","xrp_summary.json","strategy_history.json","xrp_model.pt","xrp_exit_policy.pt")
+ARTIFACTS=("xrp_state.json","xrp_summary.json","strategy_history.json","xrp_model.pt","xrp_exit_policy.pt","xrp_live_state.json")
 LIMIT=90*1024*1024
 BLOCK=1024*1024
 
