@@ -1,3 +1,6 @@
+import json
+import os
+import tempfile
 import unittest
 from unittest.mock import patch
 
@@ -49,6 +52,20 @@ class XRPExecutionSafetyTests(unittest.TestCase):
     def test_live_execution_stays_disabled_without_opt_in(self):
         with patch.dict("os.environ", {"XRP_LIVE_TRADING_ENABLED": "false"}, clear=False):
             self.assertEqual(process_live({}), {"enabled": False, "status": "disabled"})
+
+    def test_disabled_cycle_is_persisted_to_live_state_audit(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            state_path = os.path.join(tmp, "xrp_live_state.json")
+            with patch("okx_live.STATE_FILE", state_path):
+                with patch.dict("os.environ", {"XRP_LIVE_TRADING_ENABLED": "false"}, clear=True):
+                    result = process_live({"open_signal": {"id": 12, "status": "OPEN"}})
+                self.assertEqual(result, {"enabled": False, "status": "disabled"})
+                with open(state_path, encoding="utf-8") as handle:
+                    saved = json.load(handle)
+                self.assertEqual(saved["last_attempt"]["status"], "disabled")
+                self.assertEqual(saved["last_attempt"]["signal_id"], 12)
+                self.assertFalse(saved["last_attempt"]["enabled"])
+                self.assertEqual(len(saved["attempts"]), 1)
 
     def test_partial_fill_cancels_remainder_and_accepts_active_attached_oco(self):
         parent_partial = {"state": "partially_filled", "accFillSz": "3", "ordId": "parent-1"}
