@@ -28,6 +28,7 @@ jobs:
       - name: Validate code and feature schema
         run: |
           python -m compileall -q ai_model.py feature_engine.py news_engine.py run_cycle.py signal_manager.py xrp_engine.py state_storage.py strategy_engine.py okx_live.py
+          python -m unittest discover -s tests -v
           python - <<'PY'
           import math
           from feature_engine import build_features
