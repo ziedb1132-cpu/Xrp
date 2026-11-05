@@ -180,7 +180,9 @@ class OKX:
             algo = algo_rows[0] if algo_rows else {}
         tp_ok = _d(algo.get("tpTriggerPx")) > 0 and _d(algo.get("tpOrdPx")) == Decimal("-1")
         sl_ok = _d(algo.get("slTriggerPx")) > 0 and _d(algo.get("slOrdPx")) == Decimal("-1")
-        if not algo or str(algo.get("ordType")) != "oco" or str(algo.get("side")) != "sell" or not (tp_ok and sl_ok):
+        if (not algo or str(algo.get("state", "")).lower() != "live"
+                or str(algo.get("ordType")) != "oco" or str(algo.get("side")) != "sell"
+                or not (tp_ok and sl_ok)):
             raise OKXError("URGENT: recovery OCO was not confirmed active by OKX.")
         return {"verified": True, "state": state, "algo_id": algo.get("algoId"),
                 "algo_client_id": recovery_id, "tp_trigger": algo.get("tpTriggerPx"),
