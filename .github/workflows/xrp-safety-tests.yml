@@ -1,0 +1,21 @@
+name: XRP safety tests
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  safety-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Compile execution adapter
+        run: python -m py_compile okx_live.py
+      - name: Run offline execution safety tests
+        run: python -m unittest discover -s tests -v
