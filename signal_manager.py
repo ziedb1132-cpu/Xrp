@@ -148,4 +148,4 @@ class SignalManager:
           "market_context":s.get("market_context",{})}
         tmp="xrp_summary.json.tmp"
         with open(tmp,"w",encoding="utf-8") as f:json.dump(summary,f,ensure_ascii=False,separators=(",",":"))
-        os.replace(tmp,"solana_summary.json")
+        os.replace(tmp,"xrp_summary.json")
