@@ -76,24 +76,32 @@ class OKX:
         return rows[0] if rows else None
 
     def verify_protection(self, cl_id):
-        """Read the exchange order back and fail closed unless TP and SL are confirmed."""
+        """Verify filled parent order and its actually active OCO/conditional protection."""
         order = self.get_order(cl_id)
         if not order:
             return {"verified": False, "state": "not_found"}
         state = str(order.get("state", "")).lower()
         filled = _d(order.get("accFillSz") or "0")
         if state == "partially_filled" or (filled > 0 and state != "filled"):
-            raise OKXError("URGENT: parent order is partially filled; protection cannot be confirmed. Inspect OKX immediately.")
+            raise OKXError("URGENT: XRP order is partially filled. Live protection is not verified; trading halted. Inspect OKX and manage the filled XRP manually.")
         if state != "filled":
             return {"verified": False, "state": state or "unknown"}
-        attached = order.get("attachAlgoOrds") or []
-        if not attached:
-            raise OKXError("URGENT: parent order filled but attached TP/SL are not confirmed. Inspect OKX immediately.")
-        tp_ok = any(x.get("tpTriggerPx") and x.get("tpOrdPx") for x in attached)
-        sl_ok = any(x.get("slTriggerPx") and x.get("slOrdPx") for x in attached)
+        expected_algo_id = ("p" + cl_id[1:])[:32]
+        found = []
+        for algo_type in ("conditional", "oco"):
+            path = "/api/v5/trade/orders-algo-pending?" + urlencode({"ordType": algo_type, "instId": INST})
+            found.extend(self.request("GET", path))
+        matches = [x for x in found if x.get("algoClOrdId") == expected_algo_id]
+        if not matches:
+            raise OKXError("URGENT: XRP buy filled but no active attached TP/SL algo found at OKX. Trading halted; inspect account immediately.")
+        algo = matches[0]
+        tp_ok = _d(algo.get("tpTriggerPx") or "0") > 0 and bool(algo.get("tpOrdPx"))
+        sl_ok = _d(algo.get("slTriggerPx") or "0") > 0 and bool(algo.get("slOrdPx"))
         if not (tp_ok and sl_ok):
-            raise OKXError("URGENT: parent order filled but both TP and SL are not confirmed. Inspect OKX immediately.")
-        return {"verified": True, "state": state, "attached_algos": attached}
+            raise OKXError("URGENT: active OKX algo does not confirm both TP and SL triggers. Trading halted; inspect account immediately.")
+        return {"verified": True, "state": state, "algo_id": algo.get("algoId"),
+                "algo_client_id": expected_algo_id, "tp_trigger": algo.get("tpTriggerPx"),
+                "sl_trigger": algo.get("slTriggerPx"), "algo_type": algo.get("ordType")}
 
     def market_buy_with_protection(self, signal, quote_amount, cl_id):
         tp = _d(signal.get("tp", 0))
