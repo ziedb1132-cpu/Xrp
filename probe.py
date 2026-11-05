@@ -1,1 +1,0 @@
-print('XRP paper engine')
