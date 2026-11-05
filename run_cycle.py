@@ -5,6 +5,7 @@ from xrp_engine import analyze
 from signal_manager import SignalManager,read,write
 from news_engine import fetch_news,sentiment_score
 from ai_model import gate_status,train,predict_probability,predict_exit_policy
+from okx_live import process_live
 
 def main():
     restore()
@@ -32,6 +33,8 @@ def main():
             candidate["exit_policy_source"]="FIXED_FALLBACK"
             candidate["exit_policy_samples"]=gate.get("exit_policy_samples",0)
     SignalManager().cycle(price,candidate,ranked,features,context)
+    # Live execution is separately opt-in and observes only newly generated signals.
+    live_status=process_live(read())
     state=read();gate=gate_status(state.get("history",[]));state["ai_gate"]=gate
     closed=[x for x in state.get("history",[]) if x.get("status") in ("TP","SL")]
     last_trained=int(state.get("last_training_samples",0))
@@ -48,6 +51,6 @@ def main():
         json.dump({"cycle":state["cycle"],"updated_at":state["updated_at"],"strategies":ranked[:20]},f,ensure_ascii=False,separators=(",",":"))
     print(json.dumps({"cycle":state["cycle"],"price":price,"open":bool(state.get("open_signal")),
                       "news":len(news),"features":len(features),"strategies":len(ranked),
-                      "ai_gate":gate,"ai_probability":probability,"ai_exit_policy":exit_policy},ensure_ascii=False))
+                      "ai_gate":gate,"ai_probability":probability,"ai_exit_policy":exit_policy,"live_execution":live_status},ensure_ascii=False))
 
 if __name__=="__main__":main()
