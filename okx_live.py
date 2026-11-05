@@ -75,6 +75,26 @@ class OKX:
         rows = self.request("GET", path)
         return rows[0] if rows else None
 
+    def verify_protection(self, cl_id):
+        """Read the exchange order back and fail closed unless TP and SL are confirmed."""
+        order = self.get_order(cl_id)
+        if not order:
+            return {"verified": False, "state": "not_found"}
+        state = str(order.get("state", "")).lower()
+        filled = _d(order.get("accFillSz") or "0")
+        if state == "partially_filled" or (filled > 0 and state != "filled"):
+            raise OKXError("URGENT: parent order is partially filled; protection cannot be confirmed. Inspect OKX immediately.")
+        if state != "filled":
+            return {"verified": False, "state": state or "unknown"}
+        attached = order.get("attachAlgoOrds") or []
+        if not attached:
+            raise OKXError("URGENT: parent order filled but attached TP/SL are not confirmed. Inspect OKX immediately.")
+        tp_ok = any(x.get("tpTriggerPx") and x.get("tpOrdPx") for x in attached)
+        sl_ok = any(x.get("slTriggerPx") and x.get("slOrdPx") for x in attached)
+        if not (tp_ok and sl_ok):
+            raise OKXError("URGENT: parent order filled but both TP and SL are not confirmed. Inspect OKX immediately.")
+        return {"verified": True, "state": state, "attached_algos": attached}
+
     def market_buy_with_protection(self, signal, quote_amount, cl_id):
         tp = _d(signal.get("tp", 0))
         sl = _d(signal.get("sl", 0))
@@ -150,10 +170,13 @@ def process_live(signal_state):
         else:
             result = api.market_buy_with_protection(signal, budget, cl_id)
             status = "accepted"
-        live["orders"][-1].update(status=status, order_id=result.get("ordId"), quote_budget=str(budget), response_state=result.get("state"))
-        live["last_status"] = status
+        live["orders"][-1].update(status="protection_check_pending", order_id=result.get("ordId"), quote_budget=str(budget), response_state=result.get("state"))
         _save(live)
-        return {"enabled": True, "status": status, "signal_id": sid, "order_id": result.get("ordId"), "budget_usdt": str(budget)}
+        verification = api.verify_protection(cl_id)
+        live["orders"][-1].update(status="protection_verified" if verification["verified"] else "protection_check_pending", verification=verification, response_state=verification.get("state"))
+        live["last_status"] = live["orders"][-1]["status"]
+        _save(live)
+        return {"enabled": True, "status": live["last_status"], "signal_id": sid, "order_id": result.get("ordId"), "budget_usdt": str(budget), "protection": verification}
     except Exception as exc:
         # Fail closed: this signal is not retried automatically; operator must inspect OKX and state.
         live["halted"] = True
