@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from okx_live import OKX, OKXError, process_live
+from okx_live import OKX, OKXError, process_live, _quote_budget
 
 
 class FakeOKX(OKX):
@@ -49,6 +49,11 @@ class FakeOKX(OKX):
 
 
 class XRPExecutionSafetyTests(unittest.TestCase):
+    def test_quote_budget_uses_100_percent_of_available_usdt(self):
+        from decimal import Decimal
+        self.assertEqual(_quote_budget(Decimal("123.456789")), Decimal("123.45"))
+        self.assertEqual(_quote_budget(Decimal("0.009")), Decimal("0.00"))
+
     def test_live_execution_stays_disabled_without_opt_in(self):
         with patch.dict("os.environ", {"XRP_LIVE_TRADING_ENABLED": "false"}, clear=False):
             self.assertEqual(process_live({}), {"enabled": False, "status": "disabled"})
