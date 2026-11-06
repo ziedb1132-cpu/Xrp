@@ -40,8 +40,8 @@ class XRPPaperFeeAccountingTests(unittest.TestCase):
             "pending_signal": None, "entry_method_stats": {}, "ranked_strategies": [],
             "ai_gate": {}, "last_training": {}, "market_context": {}
         }
-        with tempfile.TemporaryDirectory() as tmp, patch("os.getcwd", return_value=tmp):
-            old = os.getcwd()
+        old = os.getcwd()
+        with tempfile.TemporaryDirectory() as tmp:
             try:
                 os.chdir(tmp)
                 SignalManager().write_summary(state)
