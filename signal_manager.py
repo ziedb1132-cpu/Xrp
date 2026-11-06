@@ -1,7 +1,11 @@
 """Persistent XRP paper-signal lifecycle with AI-selected pending entry methods; paper only."""
 import json, os, time
 STATE="xrp_state.json"
+# Paper-trading fee assumptions. Separate overrides are supported; PAPER_FEE_PCT remains
+# the backward-compatible default for both sides.
 FEE_PCT=float(os.getenv("PAPER_FEE_PCT","0.10"))
+BUY_FEE_PCT=float(os.getenv("PAPER_BUY_FEE_PCT",os.getenv("PAPER_FEE_PCT","0.10")))
+SELL_FEE_PCT=float(os.getenv("PAPER_SELL_FEE_PCT",os.getenv("PAPER_FEE_PCT","0.10")))
 SLIPPAGE_PCT=float(os.getenv("PAPER_SLIPPAGE_PCT","0.05"))
 
 def read():
@@ -36,10 +40,15 @@ def _close(a,status,price,now,s):
     high=float(a.get("high_water",entry));low=float(a.get("low_water",entry))
     mfe=max(0.0,(high/entry-1)*100) if entry else 0.0
     mae=max(0.0,(1-low/entry)*100) if entry else 0.0
-    net=gross-(2*FEE_PCT)-SLIPPAGE_PCT
+    buy_fee=BUY_FEE_PCT
+    sell_fee=SELL_FEE_PCT
+    total_fees=buy_fee+sell_fee
+    net=gross-total_fees-SLIPPAGE_PCT
     a.update(status=status,exit_price=price,closed_at=now,gross_return_pct=round(gross,5),
-             fees_pct=2*FEE_PCT,slippage_pct=SLIPPAGE_PCT,net_return_pct=round(net,5),
-             close_reason=status,mfe_pct=round(mfe,5),mae_pct=round(mae,5))
+             buy_fee_pct=round(buy_fee,5),sell_fee_pct=round(sell_fee,5),
+             fees_pct=round(total_fees,5),slippage_pct=SLIPPAGE_PCT,net_return_pct=round(net,5),
+             accounting_model="PAPER_ESTIMATE",close_reason=status,
+             mfe_pct=round(mfe,5),mae_pct=round(mae,5))
     s["history"].append(a)
     if status=="TP":s["tp_count"]+=1
     else:s["sl_count"]+=1
@@ -138,9 +147,19 @@ class SignalManager:
             p={key:pending[key] for key in ("entry_method","entry_policy_source","entry_trigger_price","entry_retest_price","entry_support_price","entry_stage","pending_since","strategy_name","strategy_score","entry_reason") if key in pending}
         closed=[x for x in s.get("history",[]) if x.get("status") in ("TP","SL")]
         net_values=[float(x.get("net_return_pct",0) or 0) for x in closed]
+        gross_values=[float(x.get("gross_return_pct",0) or 0) for x in closed]
+        fee_values=[float(x.get("fees_pct",0) or 0) for x in closed]
+        slippage_values=[float(x.get("slippage_pct",0) or 0) for x in closed]
         profitable=sum(1 for x in net_values if x>0)
         summary={"price":s.get("price"),"current_price":s.get("price"),"closed_signals":len(closed),
-          "net_profit_pct":round(sum(net_values),5),"win_rate_pct":round(100*profitable/len(net_values),2) if net_values else None,
+          "gross_profit_pct":round(sum(gross_values),5),
+          "buy_fees_pct":round(sum(float(x.get("buy_fee_pct",FEE_PCT) or 0) for x in closed),5),
+          "sell_fees_pct":round(sum(float(x.get("sell_fee_pct",FEE_PCT) or 0) for x in closed),5),
+          "total_fees_pct":round(sum(fee_values),5),
+          "slippage_pct":round(sum(slippage_values),5),
+          "net_profit_pct":round(sum(net_values),5),
+          "fee_model":"PAPER_ESTIMATE","buy_fee_rate_pct":BUY_FEE_PCT,"sell_fee_rate_pct":SELL_FEE_PCT,
+          "win_rate_pct":round(100*profitable/len(net_values),2) if net_values else None,
           "total_signals":s["total_signals"],"tp_count":s["tp_count"],"sl_count":s["sl_count"],"cycle":s["cycle"],"updated_at":s.get("updated_at"),
           "open_signal":a,"pending_signal":p,"entry_method_stats":s.get("entry_method_stats",{}),
           "strategy_count":len(s.get("ranked_strategies",[])),"top_strategies":s.get("ranked_strategies",[])[:20],
