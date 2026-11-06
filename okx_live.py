@@ -15,6 +15,10 @@ class OKXError(RuntimeError):
 def _d(v):
     return Decimal(str(v))
 
+def _quote_budget(available):
+    """Allocate 100% of currently available USDT, rounded down to OKX quote precision."""
+    return _d(available).quantize(Decimal("0.01"), rounding=ROUND_DOWN)
+
 def _state():
     try:
         with open(STATE_FILE, encoding="utf-8") as f:
@@ -211,7 +215,7 @@ class OKX:
         estimated_base = quote_amount / entry
         rounded_base = (estimated_base / lot_sz).to_integral_value(rounding=ROUND_DOWN) * lot_sz
         if rounded_base < min_sz:
-            raise OKXError("10% of available USDT is below the XRP minimum order size.")
+            raise OKXError("100% of available USDT is below the XRP minimum order size.")
         # Quote-currency market buy; TP and SL are attached to the parent order.
         body = {
             "instId": INST, "tdMode": "cash", "clOrdId": cl_id,
@@ -301,7 +305,7 @@ def _process_live(signal_state):
     try:
         api = OKX()
         available = api.available_usdt()
-        budget = (available * Decimal("0.10")).quantize(Decimal("0.01"), rounding=ROUND_DOWN)
+        budget = _quote_budget(available)
         record = live["orders"][-1]
         record["baseline_xrp_total"] = str(api.xrp_balance()["total"])
         record["signal"] = {k: signal.get(k) for k in ("entry", "tp", "sl")}
@@ -316,7 +320,7 @@ def _process_live(signal_state):
         else:
             result = api.market_buy_with_protection(signal, budget, cl_id)
             status = "accepted"
-        live["orders"][-1].update(status="protection_check_pending", order_id=result.get("ordId"), quote_budget=str(budget), response_state=result.get("state"))
+        live["orders"][-1].update(status="protection_check_pending", order_id=result.get("ordId"), quote_budget=str(budget), allocation_pct=100, response_state=result.get("state"))
         _save(live)
         verification = api.verify_protection(cl_id, live["orders"][-1])
         if verification.get("state") == "canceled_no_fill":
@@ -325,7 +329,7 @@ def _process_live(signal_state):
             live["orders"][-1].update(status="protection_verified" if verification["verified"] else "protection_check_pending", verification=verification, response_state=verification.get("state"))
         live["last_status"] = live["orders"][-1]["status"]
         _save(live)
-        return {"enabled": True, "status": live["last_status"], "signal_id": sid, "order_id": result.get("ordId"), "budget_usdt": str(budget), "protection": verification}
+        return {"enabled": True, "status": live["last_status"], "signal_id": sid, "order_id": result.get("ordId"), "budget_usdt": str(budget), "allocation_pct": 100, "protection": verification}
     except Exception as exc:
         # Fail closed: this signal is not retried automatically; operator must inspect OKX and state.
         live["halted"] = True
