@@ -58,6 +58,20 @@ def _flags(candles):
     }
 
 
+def _atr_pct(candles, period=14):
+    """Average true range as a percentage of the latest close."""
+    if len(candles) < period + 1:
+        return 0.0
+    ranges = []
+    for i in range(len(candles) - period, len(candles)):
+        bar = candles[i]
+        previous_close = float(candles[i - 1]["c"])
+        high, low = float(bar["h"]), float(bar["l"])
+        ranges.append(max(high - low, abs(high - previous_close), abs(low - previous_close)))
+    close = float(candles[-1]["c"])
+    return (sum(ranges) / len(ranges) / close * 100.0) if close > 0 else 0.0
+
+
 def _opportunity(candles, context=None, book=None, recent_stats=None):
     context = context or {}
     book = book or {}
@@ -132,7 +146,12 @@ def _opportunity(candles, context=None, book=None, recent_stats=None):
 
     # Conservative, explicitly labelled estimate; this is a quality gate, not a calibrated probability.
     estimated_win = min(0.68, max(0.42, 0.50 + (score - 65.0) * 0.009))
-    tp_pct, sl_pct = 1.30, 0.65
+    atr_pct = _atr_pct(candles)
+    # Volatility-adaptive initial exit distances. Floors avoid fee-dominated exits;
+    # caps prevent an unusually volatile candle from creating an oversized risk.
+    tp_pct = min(4.0, max(0.80, atr_pct * 2.0))
+    sl_pct = min(2.0, max(0.45, atr_pct * 1.20))
+    tp_pct = min(4.0, max(tp_pct, sl_pct * 1.50))
     net_win = tp_pct - ROUND_TRIP_COST_PCT
     net_loss = sl_pct + ROUND_TRIP_COST_PCT
     expected_net = estimated_win * net_win - (1 - estimated_win) * net_loss
@@ -147,7 +166,9 @@ def _opportunity(candles, context=None, book=None, recent_stats=None):
         "score": score, "threshold": threshold, "confirmations": confirmations,
         "estimated_win_rate_pct": round(estimated_win * 100, 2),
         "expected_net_edge_pct": round(expected_net, 4),
-        "tp_distance_pct": tp_pct, "sl_distance_pct": sl_pct,
+        "tp_distance_pct": round(tp_pct, 5), "sl_distance_pct": round(sl_pct, 5),
+        "atr_pct": round(atr_pct, 5),
+        "exit_distance_source": "ATR_VOLATILITY_ADAPTIVE",
         "eligible": eligible, "reasons": reasons,
         "momentum_3": round(mom3, 6), "momentum_6": round(mom6, 6),
         "rsi": round(rsi_now, 2), "volume_ratio": round(volume_ratio, 3),
@@ -211,6 +232,10 @@ def evaluate_strategies(candles, market_context=None, book=None, recent_stats=No
             "opportunity_threshold": opportunity["threshold"],
             "confirmations": opportunity["confirmations"],
             "expected_net_edge_pct": opportunity["expected_net_edge_pct"],
+            "tp_distance_pct": opportunity["tp_distance_pct"],
+            "sl_distance_pct": opportunity["sl_distance_pct"],
+            "atr_pct": opportunity["atr_pct"],
+            "exit_distance_source": opportunity["exit_distance_source"],
             "opportunity_reasons": opportunity["reasons"],
             "eligible": bt["eligible"],
             "entry_eligible": opportunity["eligible"],
