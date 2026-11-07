@@ -28,6 +28,30 @@ class XRPPaperFeeAccountingTests(unittest.TestCase):
         self.assertEqual(signal["accounting_model"], "PAPER_ESTIMATE")
         self.assertEqual(len(state["history"]), 1)
 
+    def test_trailing_activates_after_30_percent_of_tp_and_never_lowers_stop(self):
+        old = os.getcwd()
+        with tempfile.TemporaryDirectory() as tmp:
+            try:
+                os.chdir(tmp)
+                manager = SignalManager()
+                candidate = {"side": "BUY", "tp_distance_pct": 2.0, "sl_distance_pct": 1.0,
+                             "entry_method": "MARKET", "strategy_name": "TEST"}
+                manager.cycle(100.0, candidate)
+                state = signal_manager.read()
+                initial_sl = state["open_signal"]["sl"]
+                manager.cycle(100.70)
+                state = signal_manager.read()
+                active = state["open_signal"]
+                self.assertTrue(active["trailing_active"])
+                self.assertGreaterEqual(active["sl"], active["break_even_price"])
+                self.assertGreater(active["sl"], initial_sl)
+                protected_sl = active["sl"]
+                manager.cycle(100.60)
+                state = signal_manager.read()
+                self.assertGreaterEqual(state["open_signal"]["sl"], protected_sl)
+            finally:
+                os.chdir(old)
+
     def test_summary_reports_gross_fees_slippage_and_net_separately(self):
         state = {
             "history": [{
@@ -57,6 +81,9 @@ class XRPPaperFeeAccountingTests(unittest.TestCase):
         self.assertEqual(summary["slippage_pct"], 0.05)
         self.assertEqual(summary["net_profit_pct"], 1.25)
         self.assertEqual(summary["fee_model"], "PAPER_ESTIMATE")
+        self.assertEqual(summary["profit_factor"], 99.0)
+        self.assertEqual(summary["avg_win_pct"], 1.25)
+        self.assertEqual(summary["expectancy_pct"], 1.25)
 
 
 if __name__ == "__main__":
