@@ -17,6 +17,13 @@ Independent XRP-USDT Spot market research and paper-signal engine.
 - Missing order-book data or an excessive spread blocks new entries. Market regime classification requires multi-timeframe trend agreement.
 - All results are paper estimates, net of configured simulated fees and slippage; they are not a guarantee of future results.
 
+## Genetic mutation research
+- Each XRP cycle evolves a bounded population of 16 candidate strategy/exit combinations over 3 generations using mutation and crossover; the population archive is persisted inside `xrp_state.json` and is not reset on normal workflow starts.
+- Candidate genes include the strategy family, momentum/volume/RSI thresholds, TP/SL distances, and trailing activation/gap. Risk bounds preserve TP 2%-6%, SL 1%-3%, and at least 1.5:1 TP:SL distance.
+- Candidates are evaluated chronologically on a 65% development segment and a separate 35% validation segment using completed 5m candles, fee/slippage-adjusted returns, and conservative stop-first OHLC handling.
+- A candidate is marked validation-passed only with at least 5 validation trades, positive validation net profit and expectancy, validation profit factor above 1.05, and positive development results. Otherwise it remains research-only.
+- Mutation results are diagnostics only in this release: they do not change the live signal selector, open/close paper positions, or submit OKX orders. This prevents an experimental genome from being deployed merely because it scored well in a small sample. A separately reviewed promotion step is required before any candidate can affect trading.
+
 ## Market analysis
 - OKX public market data for XRP-USDT: 5m, 15m, 1h, 4h candles, ticker, and order book.
 - Stable 1,205-dimensional feature schema, eight dynamically ranked strategy families, regime context, and XRP/Ripple news sentiment.
