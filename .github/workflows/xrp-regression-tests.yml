@@ -18,6 +18,6 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
       - name: Compile
-        run: python -m compileall -q ai_model.py feature_engine.py news_engine.py run_cycle.py signal_manager.py xrp_engine.py state_storage.py strategy_engine.py okx_live.py scalping_engine.py mutation_engine.py
+        run: python -m compileall -q ai_model.py feature_engine.py news_engine.py run_cycle.py signal_manager.py xrp_engine.py state_storage.py strategy_engine.py okx_live.py scalping_engine.py mutation_engine.py model_mutation_engine.py
       - name: Regression tests
         run: python -m unittest discover -s tests -v
