@@ -1,5 +1,6 @@
 """Explainable XRP opportunity scoring with fee-aware historical diagnostics."""
 import math
+import os
 
 STRATEGIES = [
     ("EMA_8_21_TREND", "Fast EMA above slow EMA with positive momentum"),
@@ -11,9 +12,11 @@ STRATEGIES = [
     ("VWAP_RECLAIM", "Close reclaims rolling volume-weighted price"),
     ("RANGE_EXPANSION", "Positive candle with expanding range"),
 ]
-FEE_PCT = 0.10
-SLIPPAGE_PCT = 0.05
-ROUND_TRIP_COST_PCT = 2 * FEE_PCT + SLIPPAGE_PCT
+FEE_PCT = float(os.getenv("PAPER_FEE_PCT", "0.10"))
+BUY_FEE_PCT = float(os.getenv("PAPER_BUY_FEE_PCT", str(FEE_PCT)))
+SELL_FEE_PCT = float(os.getenv("PAPER_SELL_FEE_PCT", str(FEE_PCT)))
+SLIPPAGE_PCT = float(os.getenv("PAPER_SLIPPAGE_PCT", "0.05"))
+ROUND_TRIP_COST_PCT = BUY_FEE_PCT + SELL_FEE_PCT + SLIPPAGE_PCT
 
 
 def _ema(values, period):
@@ -130,6 +133,9 @@ def _opportunity(candles, context=None, book=None, recent_stats=None):
     if volatility > 0.008:
         score -= 5
         reasons.append("elevated_volatility")
+    if not book.get("available", True):
+        score -= 20
+        reasons.append("orderbook_unavailable")
     if spread > 0.12:
         score -= 15
         reasons.append("spread_too_wide")
@@ -155,7 +161,8 @@ def _opportunity(candles, context=None, book=None, recent_stats=None):
     net_win = tp_pct - ROUND_TRIP_COST_PCT
     net_loss = sl_pct + ROUND_TRIP_COST_PCT
     expected_net = estimated_win * net_win - (1 - estimated_win) * net_loss
-    eligible = score >= threshold and confirmations >= 3 and spread <= 0.12 and expected_net > 0.03
+    eligible = (score >= threshold and confirmations >= 3 and spread <= 0.12
+                and book.get("available", True) and expected_net > 0.03)
     if confirmations < 3:
         reasons.append("too_few_independent_confirmations")
     if score < threshold:
