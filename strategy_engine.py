@@ -187,7 +187,7 @@ def _backtest(candles, name):
     """Chronological fee-aware simulation using the same ATR exits and trailing rules."""
     trades = []
     i = 40
-    horizon = 48
+    unresolved = 0
     while i < len(candles) - 1:
         flags = _flags(candles[:i + 1])
         if not flags.get(name):
@@ -205,7 +205,7 @@ def _backtest(candles, name):
         exit_price = None
         exit_index = None
         exit_reason = None
-        end = min(len(candles), i + horizon + 1)
+        end = len(candles)
         for j in range(i + 1, end):
             bar = candles[j]
             bar_low, bar_high = float(bar["l"]), float(bar["h"])
@@ -224,12 +224,11 @@ def _backtest(candles, name):
                 proposed = max(break_even, high_water * 0.993)
                 sl = max(sl, proposed)
         if exit_price is None:
-            exit_index = end - 1
-            if exit_index <= i:
-                i += 1
-                continue
-            exit_price = float(candles[exit_index]["c"])
-            exit_reason = "TIME_OUT"
+            # No time-based exit exists in the signal manager. Keep this trade
+            # unresolved at the end of the available history instead of inventing
+            # a timeout that the live/paper engine would never execute.
+            unresolved += 1
+            break
         gross = (exit_price / entry - 1.0) * 100.0
         trades.append({
             "net": gross - ROUND_TRIP_COST_PCT,
@@ -255,7 +254,7 @@ def _backtest(candles, name):
         "avg_win_pct": round(sum(wins) / len(wins), 4) if wins else None,
         "avg_loss_pct": round(sum(losses) / len(losses), 4) if losses else None,
         "eligible": len(trades) >= 20 and pf > 1.05 and bool(net_values) and sum(net_values) > 0,
-        "backtest_model": "ATR_TP_SL_FEE_AWARE_TRAILING_30PCT",
+        "backtest_model": "ATR_TP_SL_FEE_AWARE_TRAILING_30PCT_NO_TIMEOUT",
     }
 
 def evaluate_strategies(candles, market_context=None, book=None, recent_stats=None):
