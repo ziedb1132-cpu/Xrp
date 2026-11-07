@@ -1,0 +1,23 @@
+name: XRP regression tests
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Compile
+        run: python -m compileall -q ai_model.py feature_engine.py news_engine.py run_cycle.py signal_manager.py xrp_engine.py state_storage.py strategy_engine.py okx_live.py scalping_engine.py
+      - name: Regression tests
+        run: python -m unittest discover -s tests -v
