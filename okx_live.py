@@ -247,7 +247,53 @@ def _process_live(signal_state):
         _save(live)
         return {"enabled": True, "status": "initialized", "baseline_signal_id": current_total}
     if live.get("halted"):
-        return {"enabled": True, "status": "halted", "reason": live.get("halt_reason", "manual halt")}
+        # Only the specific zero-balance halt is eligible for automatic recovery.
+        # Other safety halts always require manual reconciliation.
+        halt_reason = str(live.get("halt_reason", "manual halt"))
+        if halt_reason != "No available USDT balance.":
+            return {"enabled": True, "status": "halted", "reason": halt_reason}
+        try:
+            api = OKX()
+            available = api.available_usdt()
+            if available <= 0:
+                return {"enabled": True, "status": "waiting_for_usdt", "available_usdt": str(available)}
+            # Do not resume into an unknown position/order left outside our saved state.
+            pending_orders = api.request(
+                "GET", "/api/v5/trade/orders-pending?" + urlencode({"instType": "SPOT", "instId": INST})
+            )
+            pending_algos = api.pending_algos()
+            balance = api.xrp_balance()
+            if pending_orders or pending_algos or balance["total"] > 0:
+                reason = "USDT is available, but existing XRP balance or open XRP orders require manual reconciliation."
+                live["halt_reason"] = reason
+                live["resume_check"] = {
+                    "timestamp": int(time.time()), "available_usdt": str(available),
+                    "pending_spot_orders": len(pending_orders), "pending_algo_orders": len(pending_algos),
+                    "xrp_total": str(balance["total"]), "status": "manual_reconciliation_required"
+                }
+                _save(live)
+                return {"enabled": True, "status": "halted_reconciliation_required", "reason": reason}
+            # The original request stopped before POST /trade/order because budget was zero.
+            # Keep its signal ID processed: never replay an old signal after a later deposit.
+            for order in reversed(live.get("orders", [])):
+                if order.get("status") == "error_halted" and order.get("error") == "No available USDT balance." and not order.get("order_id"):
+                    order["status"] = "skipped_no_funds"
+                    order["reconciled_at"] = int(time.time())
+                    break
+            live["halted"] = False
+            live["halt_reason"] = ""
+            live["last_status"] = "resumed_waiting_for_new_signal"
+            live["resume_check"] = {
+                "timestamp": int(time.time()), "available_usdt": str(available),
+                "pending_spot_orders": 0, "pending_algo_orders": 0,
+                "xrp_total": str(balance["total"]), "status": "resumed"
+            }
+            _save(live)
+            return {"enabled": True, "status": "resumed_waiting_for_new_signal",
+                    "available_usdt": str(available), "allocation_pct": 100}
+        except Exception as exc:
+            # A failed verification must never clear the halt.
+            return {"enabled": True, "status": "halted", "reason": str(exc)[:300]}
 
     # Re-check accepted orders every cycle until OKX confirms active protection.
     pending = next((x for x in reversed(live.get("orders", [])) if x.get("status") == "protection_check_pending"), None)
