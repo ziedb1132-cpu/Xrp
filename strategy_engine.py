@@ -196,7 +196,7 @@ def _backtest(candles, name):
 
 def evaluate_strategies(candles, market_context=None, book=None, recent_stats=None):
     flags = _flags(candles)
-    if not flags:
+    if len(candles) < 40:
         return []
     opportunity = _opportunity(candles, market_context, book, recent_stats)
     results = []
