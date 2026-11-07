@@ -8,6 +8,7 @@ from strategy_engine import select_strategy
 from ai_model import select_entry_method
 from scalping_engine import evaluate_scalping
 from mutation_engine import evolve_population
+from model_mutation_engine import evolve_model_inputs
 
 BASE = "https://www.okx.com/api/v5"
 
@@ -112,7 +113,7 @@ def _regime(cs, cs15, cs1h, cs4h):
     }
 
 
-def analyze(news_sentiment=0.0, entry_method_stats=None, recent_stats=None, mutation_memory=None):
+def analyze(news_sentiment=0.0, entry_method_stats=None, recent_stats=None, mutation_memory=None, model_mutation_memory=None):
     cs = candles("5m", 300)
     cs1 = candles("1m", 300)
     cs15 = candles("15m", 120)
@@ -124,6 +125,7 @@ def analyze(news_sentiment=0.0, entry_method_stats=None, recent_stats=None, muta
     mutation_candles = [bar for bar in cs if bar.get("confirmed", True)]
     mutation_result = evolve_population(mutation_candles, mutation_memory)
     context["mutation_lab"] = mutation_result
+    context["model_mutation_lab"] = evolve_model_inputs(mutation_candles, model_mutation_memory)
     context.update({
         "book_imbalance": book.get("imbalance", 0.0),
         "book_spread_pct": book.get("spread_pct", 999.0),
