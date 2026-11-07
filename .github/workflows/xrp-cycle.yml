@@ -28,11 +28,12 @@ jobs:
         run: python state_storage.py restore
       - name: Validate code and feature schema
         run: |
-          python -m compileall -q ai_model.py feature_engine.py news_engine.py run_cycle.py signal_manager.py xrp_engine.py state_storage.py strategy_engine.py okx_live.py
+          python -m compileall -q ai_model.py feature_engine.py news_engine.py run_cycle.py signal_manager.py xrp_engine.py state_storage.py strategy_engine.py okx_live.py scalping_engine.py
           python - <<'PY'
           from feature_engine import build_features
           from ai_model import gate_status
           from strategy_engine import evaluate_strategies
+from scalping_engine import evaluate_scalping
           candles=[]
           for i in range(300):
               p=100+i*0.02
@@ -40,6 +41,7 @@ jobs:
           features=build_features(candles,{"trend":0.01,"volatility":0.002},{"imbalance":0.1,"spread_pct":0.02},0.05)
           assert len(features)==1205, f"Expected 1205 features, got {len(features)}"
           assert len(evaluate_strategies(candles))==8, "Expected 8 strategy families"
+          assert callable(evaluate_scalping), "Scalping engine unavailable"
           sample={k:0.001 for k in features}
           wins=[{"status":"TP","net_return_pct":0.5,"entry":1.0,"high_water":1.03,"low_water":0.995,
                  "features":sample,"feature_version":"xrp-1200-v2"} for _ in range(30)]
