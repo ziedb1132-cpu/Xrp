@@ -11,7 +11,15 @@ def main():
     restore()
     news=fetch_news();sentiment=sentiment_score(news)
     state=read()
-    price,candidate,features,ranked,context=analyze(sentiment,state.get("entry_method_stats",{}))
+    closed_history=[x for x in state.get("history",[]) if x.get("status") in ("TP","SL")]
+    recent=closed_history[-10:]
+    recent_stats={
+        "closed":len(recent),
+        "win_rate_pct":(100*sum(1 for x in recent if float(x.get("net_return_pct",0) or 0)>0)/len(recent)) if recent else 50.0,
+    }
+    price,candidate,features,ranked,context=analyze(
+        sentiment,state.get("entry_method_stats",{}),recent_stats
+    )
     state["news_items"]=news[:250];state["news_sentiment"]=sentiment;state["news_updated_at"]=int(time.time())
     write(state)
     gate=gate_status(state.get("history",[]))
@@ -19,8 +27,13 @@ def main():
     exit_policy=predict_exit_policy(features,price) if gate["enabled"] else None
     if candidate and probability is not None:
         candidate["ai_win_probability"]=round(probability,5)
-        # Preserve the existing model confidence filter; TP/SL policy is handled independently.
-        if probability<0.52:candidate=None
+        # Early-stage probabilities are noisy. The independent technical/risk gate
+        # remains primary; only an extreme model warning can veto an otherwise valid setup.
+        candidate["ai_probability_role"]="secondary_risk_check"
+        if probability<0.40:
+            candidate=None
+            context.setdefault("entry_diagnostics",{})["reason"]="ai_extreme_low_confidence_veto"
+            context["entry_diagnostics"]["ai_probability"]=round(probability,5)
     if candidate:
         if exit_policy:
             candidate.update(exit_policy)
@@ -28,8 +41,8 @@ def main():
             candidate["exit_policy_samples"]=exit_policy.get("model_samples",0)
         else:
             # Safe initial levels until the exit model has enough observed excursions.
-            candidate["tp"]=price*1.012
-            candidate["sl"]=price*0.993
+            candidate["tp"]=price*(1+float(candidate.get("tp_distance_pct",1.30))/100.0)
+            candidate["sl"]=price*(1-float(candidate.get("sl_distance_pct",0.65))/100.0)
             candidate["exit_policy_source"]="FIXED_FALLBACK"
             candidate["exit_policy_samples"]=gate.get("exit_policy_samples",0)
     SignalManager().cycle(price,candidate,ranked,features,context)
@@ -50,6 +63,7 @@ def main():
     with open("strategy_history.json","w",encoding="utf-8") as f:
         json.dump({"cycle":state["cycle"],"updated_at":state["updated_at"],"strategies":ranked[:20]},f,ensure_ascii=False,separators=(",",":"))
     print(json.dumps({"cycle":state["cycle"],"price":price,"open":bool(state.get("open_signal")),
+                      "pending":bool(state.get("pending_signal")),"entry_diagnostics":context.get("entry_diagnostics",{}),
                       "news":len(news),"features":len(features),"strategies":len(ranked),
                       "ai_gate":gate,"ai_probability":probability,"ai_exit_policy":exit_policy,"live_execution":live_status},ensure_ascii=False))
 
