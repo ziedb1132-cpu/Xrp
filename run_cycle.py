@@ -19,11 +19,14 @@ def main():
     }
     price,candidate,features,ranked,context=analyze(
         sentiment,state.get("entry_method_stats",{}),recent_stats,
-        state.get("mutation_lab",{}).get("memory",{})
+        state.get("mutation_lab",{}).get("memory",{}),
+        state.get("model_mutation_lab",{}).get("memory",{})
     )
     state["news_items"]=news[:250];state["news_sentiment"]=sentiment;state["news_updated_at"]=int(time.time())
     if context.get("mutation_lab"):
         state["mutation_lab"] = context["mutation_lab"]
+    if context.get("model_mutation_lab"):
+        state["model_mutation_lab"] = context["model_mutation_lab"]
     write(state)
     gate=gate_status(state.get("history",[]))
     is_scalp=bool(candidate and candidate.get("strategy_type")=="SCALPING")
@@ -77,6 +80,6 @@ def main():
     print(json.dumps({"cycle":state["cycle"],"price":price,"open":bool(state.get("open_signal")),
                       "pending":bool(state.get("pending_signal")),"entry_diagnostics":context.get("entry_diagnostics",{}),"scalping_diagnostics":context.get("scalping_diagnostics",{}),
                       "news":len(news),"features":len(features),"strategies":len(ranked),
-                      "ai_gate":gate,"ai_probability":probability,"ai_exit_policy":exit_policy,"mutation_lab":(state.get("mutation_lab",{}).get("report",{})),"live_execution":live_status},ensure_ascii=False))
+                      "ai_gate":gate,"ai_probability":probability,"ai_exit_policy":exit_policy,"mutation_lab":(state.get("mutation_lab",{}).get("report",{})),"model_mutation_lab":(state.get("model_mutation_lab",{}).get("report",{})),"live_execution":live_status},ensure_ascii=False))
 
 if __name__=="__main__":main()
