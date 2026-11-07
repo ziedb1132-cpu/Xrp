@@ -212,16 +212,17 @@ def evaluate_strategies(candles, market_context=None, book=None, recent_stats=No
             "confirmations": opportunity["confirmations"],
             "expected_net_edge_pct": opportunity["expected_net_edge_pct"],
             "opportunity_reasons": opportunity["reasons"],
-            "eligible": opportunity["eligible"],
+            "eligible": bt["eligible"],
+            "entry_eligible": opportunity["eligible"],
             "backtest_eligible": bt["eligible"],
             **bt,
         })
-    return sorted(results, key=lambda x: (x["eligible"], x["opportunity_score"], x["active"], x["profit_factor"]), reverse=True)
+    return sorted(results, key=lambda x: (x["entry_eligible"], x["opportunity_score"], x["active"], x["profit_factor"]), reverse=True)
 
 
 def select_strategy(candles, market_context=None, book=None, recent_stats=None):
     ranked = evaluate_strategies(candles, market_context, book, recent_stats)
-    if not ranked or not ranked[0].get("eligible"):
+    if not ranked or not ranked[0].get("entry_eligible"):
         return None, ranked
     # Best available technical setup can be selected even when none of the eight
     # legacy boolean triggers is active. This is deliberately not a forced entry.
