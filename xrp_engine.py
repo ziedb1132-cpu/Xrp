@@ -106,7 +106,7 @@ def _regime(cs, cs15, cs1h, cs4h):
     }
 
 
-def analyze(news_sentiment=0.0, entry_method_stats=None):
+def analyze(news_sentiment=0.0, entry_method_stats=None, recent_stats=None):
     cs = candles("5m", 300)
     cs15 = candles("15m", 120)
     cs1h = candles("1H", 100)
@@ -122,8 +122,17 @@ def analyze(news_sentiment=0.0, entry_method_stats=None):
         "latest_candle_ts": cs[-1]["ts"],
         "data_quality": "ok",
     })
-    selected, ranked = select_strategy(cs)
     features = build_features(cs, context, book, news_sentiment)
+    selected, ranked = select_strategy(cs, context, book, recent_stats)
+    context["entry_diagnostics"] = {
+        "selected": bool(selected),
+        "selection_source": selected.get("selection_source") if selected else None,
+        "opportunity_score": selected.get("opportunity_score") if selected else (ranked[0].get("opportunity_score") if ranked else None),
+        "threshold": (ranked[0].get("opportunity_score") if ranked else None),
+        "best_strategy": ranked[0].get("name") if ranked else None,
+        "active_legacy_strategies": sum(1 for item in ranked if item.get("active")),
+        "reason": "qualified_best_opportunity" if selected else "no_setup_passed_independent_quality_gate",
+    }
     entry_policy = select_entry_method(context, entry_method_stats)
     resistance = max(item["h"] for item in cs[-21:-1])
     support = min(item["l"] for item in cs[-21:-1])
@@ -132,12 +141,17 @@ def analyze(news_sentiment=0.0, entry_method_stats=None):
         candidate = {
             "side": "BUY",
             "entry": price,
-            "tp": price * 1.012,
-            "sl": price * 0.993,
+            "tp": price * (1 + 1.30 / 100.0),
+            "sl": price * (1 - 0.65 / 100.0),
+            "tp_distance_pct": 1.30,
+            "sl_distance_pct": 0.65,
             "strategy_name": selected["name"],
             "strategy_description": selected["description"],
-            "strategy_score": selected["score"],
-            "entry_reason": selected["description"],
+            "strategy_score": selected["opportunity_score"],
+            "opportunity_score": selected["opportunity_score"],
+            "expected_net_edge_pct": ranked[0].get("expected_net_edge_pct"),
+            "selection_source": selected.get("selection_source", "LEGACY_ACTIVE_STRATEGY"),
+            "entry_reason": "Best available setup: " + selected["description"],
             "timeframe": "5m",
             "features": features,
             "feature_version": "xrp-1200-v2",
@@ -149,6 +163,7 @@ def analyze(news_sentiment=0.0, entry_method_stats=None):
             "entry_retest_price": round(resistance, 10),
             "entry_support_price": round(support, 10),
             "entry_invalidation_price": round(support * 0.985, 10),
+            "opportunity_score": selected.get("opportunity_score"),
         }
     return price, candidate, features, ranked, context
 
