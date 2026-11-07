@@ -6,6 +6,7 @@ import requests
 from feature_engine import build_features
 from strategy_engine import select_strategy
 from ai_model import select_entry_method
+from scalping_engine import evaluate_scalping
 
 BASE = "https://www.okx.com/api/v5"
 
@@ -38,7 +39,8 @@ def candles(bar="5m", limit=300):
             raise RuntimeError(f"Non-finite {bar} candle value")
         if min(o, h, low, close) <= 0 or volume < 0 or h < max(o, close, low) or low > min(o, close, h):
             raise RuntimeError(f"Invalid OHLCV values in {bar} candles")
-        parsed.append({"ts": ts, "o": o, "h": h, "l": low, "c": close, "vol": volume})
+        parsed.append({"ts": ts, "o": o, "h": h, "l": low, "c": close, "vol": volume,
+                       "confirmed": (str(row[8]) == "1") if len(row) > 8 else True})
     if len(parsed) < 50:
         raise RuntimeError(f"Insufficient {bar} candles: {len(parsed)}")
     timestamps = [item["ts"] for item in parsed]
@@ -111,6 +113,7 @@ def _regime(cs, cs15, cs1h, cs4h):
 
 def analyze(news_sentiment=0.0, entry_method_stats=None, recent_stats=None):
     cs = candles("5m", 300)
+    cs1 = candles("1m", 300)
     cs15 = candles("15m", 120)
     cs1h = candles("1H", 100)
     cs4h = candles("4H", 80)
@@ -123,7 +126,7 @@ def analyze(news_sentiment=0.0, entry_method_stats=None, recent_stats=None):
         "orderbook_available": bool(book.get("available")),
         "liquidity_state": ("unavailable" if not book.get("available") else
                             "weak" if float(book.get("spread_pct", 999.0)) > 0.12 else "normal"),
-        "candle_counts": {"5m": len(cs), "15m": len(cs15), "1h": len(cs1h), "4h": len(cs4h)},
+        "candle_counts": {"1m": len(cs1), "5m": len(cs), "15m": len(cs15), "1h": len(cs1h), "4h": len(cs4h)},
         "latest_candle_ts": cs[-1]["ts"],
         "data_quality": "ok",
     })
@@ -174,6 +177,17 @@ def analyze(news_sentiment=0.0, entry_method_stats=None, recent_stats=None):
             "entry_support_price": round(support, 10),
             "entry_invalidation_price": round(support * 0.985, 10),
             "opportunity_score": selected.get("opportunity_score"),
+        }
+    scalp_candidate, scalp_diagnostics = evaluate_scalping(cs1, cs, book, price)
+    context["scalping_diagnostics"] = scalp_diagnostics
+    if scalp_candidate:
+        candidate = scalp_candidate
+        context["entry_diagnostics"] = {
+            "selected": True, "selection_source": "SCALPING_MICROSTRUCTURE_FILTER",
+            "best_strategy": "XRP_SCALPING_1M_5M", "reason": "qualified_scalping_setup",
+            "opportunity_score": scalp_candidate["opportunity_score"],
+            "expected_net_edge_pct": scalp_candidate["expected_net_edge_pct"],
+            "confirmations": scalp_diagnostics.get("confirmations", 0),
         }
     return price, candidate, features, ranked, context
 
