@@ -56,8 +56,9 @@ def main():
     # Incremental update after every additional compatible closed signal.
     if gate["enabled"] and gate.get("compatible_signals",0)>last_trained:
         result=train(closed,epochs=2);state["last_training"]=result
-        if result.get("trained"):
-            state["last_training_samples"]=int(result.get("samples",gate.get("compatible_signals",0)))
+        # Record the attempted sample boundary even when the guard rejects a model.
+        # Retry only after genuinely new compatible closed signals arrive.
+        state["last_training_samples"]=int(gate.get("compatible_signals",0))
     state["strategy_discovery"]={"evaluated":len(ranked),"eligible":sum(1 for x in ranked if x.get("eligible")),
                                   "top":ranked[:20],"updated_at":int(time.time())}
     write(state)
