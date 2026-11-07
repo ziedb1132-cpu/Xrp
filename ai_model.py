@@ -363,7 +363,9 @@ def select_entry_method(market_context, method_stats=None):
         priors["SUPPORT_BOUNCE"] += 0.04
     scored = {}
     total_entry_samples = sum(int((stats.get(name) or {}).get("trades", 0) or 0) for name in ENTRY_METHODS)
-    learning_ready = total_entry_samples >= GATE_CLOSED
+    total_entry_wins = sum(int((stats.get(name) or {}).get("wins", 0) or 0) for name in ENTRY_METHODS)
+    total_entry_losses = sum(int((stats.get(name) or {}).get("losses", 0) or 0) for name in ENTRY_METHODS)
+    learning_ready = total_entry_wins >= GATE_MIN_WINS and total_entry_losses >= GATE_MIN_LOSSES
     for name in ENTRY_METHODS:
         row = stats.get(name, {})
         n = int(row.get("trades", 0) or 0)
@@ -380,5 +382,5 @@ def select_entry_method(market_context, method_stats=None):
         "scores": {name: round(value, 5) for name, value in scored.items()},
         "samples": {name: int((stats.get(name) or {}).get("trades", 0) or 0) for name in ENTRY_METHODS},
         "total_samples": total_entry_samples, "learning_ready": learning_ready,
-        "source": "ONLINE_LEARNED_ENTRY_POLICY" if learning_ready else "REGIME_PRIOR_UNTIL_10_CLOSED",
+        "source": "ONLINE_LEARNED_ENTRY_POLICY" if learning_ready else "REGIME_PRIOR_UNTIL_30_WINS_30_LOSSES",
     }
