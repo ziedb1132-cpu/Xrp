@@ -1,7 +1,7 @@
 import unittest
 
-from ai_model import gate_status, GATE_MIN_WINS, GATE_MIN_LOSSES
-from feature_engine import FEATURE_DIM, FEATURE_VERSION
+from ai_model import gate_status, GATE_MIN_WINS, GATE_MIN_LOSSES, FEATURE_DIM
+from feature_engine import FEATURE_VERSION
 
 
 class BalancedAIGateTests(unittest.TestCase):
