@@ -57,6 +57,8 @@ jobs:
           assert not gate_status(wrong+losses)["enabled"], "AI gate accepted an incompatible feature version"
           print("PREFLIGHT_OK features=1205 strategies=8 ai_gate=30wins+30losses finite/version_checked")
           PY
+      - name: Run regression tests
+        run: python -m unittest discover -s tests -v
       - name: Execute 100 cycles and persist every cycle
         env:
           OKX_API_KEY: ${{ secrets.OKX_API_KEY }}
