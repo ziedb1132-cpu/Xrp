@@ -41,6 +41,9 @@ def _atr_pct(candles, period=14):
 
 def evaluate_scalping(candles_1m, candles_5m, book, price):
     """Return a scalp candidate only when independent micro/macro and liquidity checks align."""
+    # Never base a scalp decision on an unfinished exchange candle.
+    candles_1m = candles_1m[:-1] if candles_1m and not candles_1m[-1].get("confirmed", True) else candles_1m
+    candles_5m = candles_5m[:-1] if candles_5m and not candles_5m[-1].get("confirmed", True) else candles_5m
     if len(candles_1m) < 80 or len(candles_5m) < 40 or not isinstance(book, dict):
         return None, {"eligible": False, "reason": "insufficient_market_history"}
     if not book.get("available"):
