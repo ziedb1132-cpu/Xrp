@@ -125,7 +125,9 @@ def _load_checkpoint(path, architecture):
                 or not isinstance(data.get("feature_mean"), list)
                 or not isinstance(data.get("feature_std"), list)
                 or len(data["feature_mean"]) != FEATURE_DIM
-                or len(data["feature_std"]) != FEATURE_DIM):
+                or len(data["feature_std"]) != FEATURE_DIM
+                or int(data.get("trained_wins", 0)) < GATE_MIN_WINS
+                or int(data.get("trained_losses", 0)) < GATE_MIN_LOSSES):
             return None
         return data
     except Exception:
@@ -245,6 +247,8 @@ def _train_exit_policy(eligible, previous):
         "input_dim": len(keys), "feature_version": FEATURE_VERSION,
         "architecture": EXIT_ARCH_VERSION, "feature_mean": mean.tolist(),
         "feature_std": std.tolist(), "trained_samples": len(rows),
+        "trained_wins": sum(_outcome(item) for item, _ in samples),
+        "trained_losses": len(samples) - sum(_outcome(item) for item, _ in samples),
     }, EXIT_MODEL_PATH)
     return {"trained": True, "samples": len(rows), "train_samples": len(x),
             "validation_samples": len(xv), "train_loss": float(loss.detach()),
