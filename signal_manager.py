@@ -88,7 +88,8 @@ def _open(p,price,now,s):
        "entry_trigger_price":p.get("entry_trigger_price"),"entry_reason":p.get("entry_reason","AI entry confirmation"),
        "timeframe":p.get("timeframe","5m"),"market_regime":p.get("market_regime","unknown"),
        "opened_price":price,"trailing_version":2,"trailing_updates":0,"trailing_active":False,
-       "trailing_activation_pct":float(p.get("trailing_activation_pct",50.0 if is_scalp else 30.0)),"trailing_stop_gap_pct":float(p.get("trailing_stop_gap_pct",0.25 if is_scalp else 0.70)),\n       "scalping_diagnostics":p.get("scalping_diagnostics",{}),
+       "trailing_activation_pct":float(p.get("trailing_activation_pct",50.0 if is_scalp else 30.0)),"trailing_stop_gap_pct":float(p.get("trailing_stop_gap_pct",0.25 if is_scalp else 0.70)),
+       "scalping_diagnostics":p.get("scalping_diagnostics",{}),
        "break_even_price":round(entry*(1+(BUY_FEE_PCT+SELL_FEE_PCT+SLIPPAGE_PCT)/100.0),10)}
     s["open_signal"]=a;s["pending_signal"]=None
 
@@ -135,14 +136,17 @@ class SignalManager:
                                  change_reason="legacy_trailing_stop_tightened",trailing_updates=int(a.get("trailing_updates",0))+1)
             else:
                 entry=float(a.get("entry",price))
-                tp_distance=min(6.0,max(2.0,float(a.get("tp_distance_pct",2.0) or 2.0)))
+                is_scalp = a.get("strategy_type") == "SCALPING"
+                tp_distance=(min(1.50,max(0.90,float(a.get("tp_distance_pct",0.90) or 0.90))) if is_scalp
+                              else min(6.0,max(2.0,float(a.get("tp_distance_pct",2.0) or 2.0))))
                 activation_pct=float(a.get("trailing_activation_pct",30.0) or 30.0)
                 activation_price=entry*(1.0+(tp_distance*activation_pct/100.0)/100.0)
                 if price>=activation_price:
                     a["trailing_active"]=True
                     old=float(a["sl"])
                     break_even=float(a.get("break_even_price",entry*(1+(BUY_FEE_PCT+SELL_FEE_PCT+SLIPPAGE_PCT)/100.0)))
-                    gap_pct=min(2.0,max(0.25,float(a.get("trailing_stop_gap_pct",0.70) or 0.70)))
+                    gap_pct=(min(0.50,max(0.15,float(a.get("trailing_stop_gap_pct",0.25) or 0.25))) if is_scalp
+                             else min(2.0,max(0.25,float(a.get("trailing_stop_gap_pct",0.70) or 0.70))))
                     proposed=max(break_even,float(a["high_water"])*(1.0-gap_pct/100.0))
                     if proposed>old:
                         reason="trailing_activated_break_even" if old<break_even else "trailing_stop_tightened"
@@ -207,12 +211,16 @@ class SignalManager:
         ai_closed=[x for x in closed if x.get("ai_win_probability") is not None]
         pre_ai_closed=[x for x in closed if x.get("ai_win_probability") is None]
         ai_exit_closed=[x for x in closed if x.get("exit_policy_source")=="AI_LEARNED_EXIT_POLICY"]
+        scalp_closed=[x for x in closed if x.get("strategy_type")=="SCALPING"]
         summary={"price":s.get("price"),"current_price":s.get("price"),"closed_signals":len(closed),
-          "risk_policy":{"tp_min_pct":2.0,"tp_max_pct":6.0,"sl_min_pct":1.0,"sl_max_pct":3.0,
+          "risk_policy":{"standard":{"tp_min_pct":2.0,"tp_max_pct":6.0,"sl_min_pct":1.0,"sl_max_pct":3.0},
+                         "scalping":{"tp_min_pct":0.90,"tp_max_pct":1.50,"sl_min_pct":0.40,"sl_max_pct":0.80},
                          "min_reward_risk_ratio":1.5,"applies_to":"new_signals_only"},
           "ai_performance":_performance_group(ai_closed),
           "pre_ai_performance":_performance_group(pre_ai_closed),
-          "ai_exit_performance":_performance_group(ai_exit_closed),\n          "scalping_performance":_performance_group(scalp_closed),\n          "scalping_closed_signals":len(scalp_closed),
+          "ai_exit_performance":_performance_group(ai_exit_closed),
+          "scalping_performance":_performance_group(scalp_closed),
+          "scalping_closed_signals":len(scalp_closed),
           "gross_profit_pct":round(sum(gross_values),5),
           "buy_fees_pct":round(sum(float(x.get("buy_fee_pct",FEE_PCT) or 0) for x in closed),5),
           "sell_fees_pct":round(sum(float(x.get("sell_fee_pct",FEE_PCT) or 0) for x in closed),5),
