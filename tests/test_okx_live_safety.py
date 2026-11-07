@@ -139,8 +139,7 @@ class XRPAutomaticResumeTests(unittest.TestCase):
             api.request.return_value = []
             api.pending_algos.return_value = []
             api.xrp_balance.return_value = {"available": Decimal("0"), "total": Decimal("0")}
-            with patch("okx_live.STATE_FILE", path), patch("okx_live.OKX", return_value=api), \\
-                 patch.dict("os.environ", {"XRP_LIVE_TRADING_ENABLED": "true", "OKX_DEMO_TRADING": "false"}, clear=False):
+            with patch("okx_live.STATE_FILE", path), patch("okx_live.OKX", return_value=api), patch.dict("os.environ", {"XRP_LIVE_TRADING_ENABLED": "true", "OKX_DEMO_TRADING": "false"}, clear=False):
                 result = process_live({"total_signals": 13, "open_signal": None})
             with open(path, encoding="utf-8") as handle:
                 saved = json.load(handle)
@@ -158,8 +157,7 @@ class XRPAutomaticResumeTests(unittest.TestCase):
             self._saved_state(path)
             api = Mock()
             api.available_usdt.return_value = Decimal("0")
-            with patch("okx_live.STATE_FILE", path), patch("okx_live.OKX", return_value=api), \\
-                 patch.dict("os.environ", {"XRP_LIVE_TRADING_ENABLED": "true", "OKX_DEMO_TRADING": "false"}, clear=False):
+            with patch("okx_live.STATE_FILE", path), patch("okx_live.OKX", return_value=api), patch.dict("os.environ", {"XRP_LIVE_TRADING_ENABLED": "true", "OKX_DEMO_TRADING": "false"}, clear=False):
                 result = process_live({"total_signals": 13, "open_signal": None})
             with open(path, encoding="utf-8") as handle:
                 saved = json.load(handle)
@@ -178,8 +176,7 @@ class XRPAutomaticResumeTests(unittest.TestCase):
             api.request.return_value = [{"ordId": "manual-open-order"}]
             api.pending_algos.return_value = []
             api.xrp_balance.return_value = {"available": Decimal("0"), "total": Decimal("0")}
-            with patch("okx_live.STATE_FILE", path), patch("okx_live.OKX", return_value=api), \\
-                 patch.dict("os.environ", {"XRP_LIVE_TRADING_ENABLED": "true", "OKX_DEMO_TRADING": "false"}, clear=False):
+            with patch("okx_live.STATE_FILE", path), patch("okx_live.OKX", return_value=api), patch.dict("os.environ", {"XRP_LIVE_TRADING_ENABLED": "true", "OKX_DEMO_TRADING": "false"}, clear=False):
                 result = process_live({"total_signals": 13, "open_signal": None})
             with open(path, encoding="utf-8") as handle:
                 saved = json.load(handle)
@@ -191,8 +188,7 @@ class XRPAutomaticResumeTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             path = os.path.join(tmp, "xrp_live_state.json")
             self._saved_state(path, "URGENT: unknown XRP position.")
-            with patch("okx_live.STATE_FILE", path), patch("okx_live.OKX") as api_class, \\
-                 patch.dict("os.environ", {"XRP_LIVE_TRADING_ENABLED": "true", "OKX_DEMO_TRADING": "false"}, clear=False):
+            with patch("okx_live.STATE_FILE", path), patch("okx_live.OKX") as api_class, patch.dict("os.environ", {"XRP_LIVE_TRADING_ENABLED": "true", "OKX_DEMO_TRADING": "false"}, clear=False):
                 result = process_live({"total_signals": 13, "open_signal": None})
             self.assertEqual(result["status"], "halted")
             api_class.assert_not_called()
