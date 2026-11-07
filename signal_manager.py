@@ -81,7 +81,7 @@ def _open(p,price,now,s):
        "entry_policy_source":p.get("entry_policy_source","ONLINE_LEARNED_ENTRY_POLICY"),
        "entry_trigger_price":p.get("entry_trigger_price"),"entry_reason":p.get("entry_reason","AI entry confirmation"),
        "timeframe":p.get("timeframe","5m"),"market_regime":p.get("market_regime","unknown"),
-       "opened_price":price,"trailing_updates":0,"trailing_active":False,
+       "opened_price":price,"trailing_version":2,"trailing_updates":0,"trailing_active":False,
        "trailing_activation_pct":30.0,"trailing_stop_gap_pct":0.70,
        "break_even_price":round(entry*(1+(BUY_FEE_PCT+SELL_FEE_PCT+SLIPPAGE_PCT)/100.0),10)}
     s["open_signal"]=a;s["pending_signal"]=None
@@ -117,6 +117,16 @@ class SignalManager:
             a["low_water"]=min(float(a["low_water"]),float(price))
             if price>=float(a["tp"]):_close(a,"TP",price,now,s);s["open_signal"]=None
             elif price<=float(a["sl"]):_close(a,"SL",price,now,s);s["open_signal"]=None
+            elif int(a.get("trailing_version",1) or 1) < 2:
+                # Preserve the previous trailing behavior for signals already open
+                # before this release; never rewrite their existing TP/SL policy.
+                if price>previous_high:
+                    old=float(a["sl"]);proposed=price*0.993
+                    if proposed>old:
+                        log=a.setdefault("risk_history",[])
+                        log.append({"at":now,"price":price,"sl_old":old,"sl_new":proposed,"reason":"legacy_trailing_stop_tightened"})
+                        a.update(sl_old=old,sl=proposed,sl_new=proposed,sl_updated_at=now,
+                                 change_reason="legacy_trailing_stop_tightened",trailing_updates=int(a.get("trailing_updates",0))+1)
             else:
                 entry=float(a.get("entry",price))
                 tp_distance=min(6.0,max(2.0,float(a.get("tp_distance_pct",2.0) or 2.0)))
@@ -154,7 +164,7 @@ class SignalManager:
         write(s);self.write_summary(s)
     def write_summary(self,s):
         source=s.get("open_signal")
-        allowed=("id","signal_id","symbol","side","entry","tp","sl","original_tp","original_sl","tp_old","tp_new","sl_old","sl_new","high_water","low_water","opened_at","status","strategy_name","strategy_description","strategy_score","opportunity_score","expected_net_edge_pct","selection_source","ai_win_probability","exit_policy_source","exit_policy_samples","predicted_mfe_pct","predicted_mae_pct","tp_distance_pct","sl_distance_pct","entry_method","entry_method_scores","entry_policy_source","entry_trigger_price","entry_reason","timeframe","market_regime","opened_price","trailing_updates","trailing_active","trailing_activation_pct","trailing_activation_price","trailing_stop_gap_pct","break_even_price","risk_history","sl_updated_at","change_reason")
+        allowed=("id","signal_id","symbol","side","entry","tp","sl","original_tp","original_sl","tp_old","tp_new","sl_old","sl_new","high_water","low_water","opened_at","status","strategy_name","strategy_description","strategy_score","opportunity_score","expected_net_edge_pct","selection_source","ai_win_probability","exit_policy_source","exit_policy_samples","predicted_mfe_pct","predicted_mae_pct","tp_distance_pct","sl_distance_pct","entry_method","entry_method_scores","entry_policy_source","entry_trigger_price","entry_reason","timeframe","market_regime","opened_price","trailing_version","trailing_updates","trailing_active","trailing_activation_pct","trailing_activation_price","trailing_stop_gap_pct","break_even_price","risk_history","sl_updated_at","change_reason")
         a={key:source[key] for key in allowed if key in source} if isinstance(source,dict) else None
         if a and isinstance(a.get("risk_history"),list):a["risk_history"]=a["risk_history"][-20:]
         pending=s.get("pending_signal")
