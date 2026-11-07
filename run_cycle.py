@@ -35,7 +35,12 @@ def main():
             candidate=None
             context.setdefault("entry_diagnostics",{})["reason"]="ai_extreme_low_confidence_veto"
             context["entry_diagnostics"]["ai_probability"]=round(probability,5)
-    if candidate:
+    if candidate and candidate.get("strategy_type") == "SCALPING":
+        # Keep the dedicated low-distance scalp TP/SL; the swing exit model is not
+        # trained for this separate strategy profile.
+        candidate["exit_policy_source"] = "SCALPING_ATR_FEE_AWARE"
+        candidate["exit_policy_samples"] = 0
+    elif candidate:
         if exit_policy:
             candidate.update(exit_policy)
             candidate["exit_policy_source"]="AI_LEARNED_EXIT_POLICY"
@@ -66,7 +71,7 @@ def main():
     with open("strategy_history.json","w",encoding="utf-8") as f:
         json.dump({"cycle":state["cycle"],"updated_at":state["updated_at"],"strategies":ranked[:20]},f,ensure_ascii=False,separators=(",",":"))
     print(json.dumps({"cycle":state["cycle"],"price":price,"open":bool(state.get("open_signal")),
-                      "pending":bool(state.get("pending_signal")),"entry_diagnostics":context.get("entry_diagnostics",{}),
+                      "pending":bool(state.get("pending_signal")),"entry_diagnostics":context.get("entry_diagnostics",{}),"scalping_diagnostics":context.get("scalping_diagnostics",{}),
                       "news":len(news),"features":len(features),"strategies":len(ranked),
                       "ai_gate":gate,"ai_probability":probability,"ai_exit_policy":exit_policy,"live_execution":live_status},ensure_ascii=False))
 
