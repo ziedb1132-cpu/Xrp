@@ -121,7 +121,8 @@ def analyze(news_sentiment=0.0, entry_method_stats=None, recent_stats=None, muta
     price = current_price()
     book = orderbook_context()
     context = _regime(cs, cs15, cs1h, cs4h)
-    mutation_result = evolve_population(cs, mutation_memory)
+    mutation_candles = [bar for bar in cs if bar.get("confirmed", True)]
+    mutation_result = evolve_population(mutation_candles, mutation_memory)
     context["mutation_lab"] = mutation_result
     context.update({
         "book_imbalance": book.get("imbalance", 0.0),
