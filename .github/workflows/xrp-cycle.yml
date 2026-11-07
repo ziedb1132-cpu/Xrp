@@ -41,15 +41,21 @@ jobs:
           assert len(features)==1205, f"Expected 1205 features, got {len(features)}"
           assert len(evaluate_strategies(candles))==8, "Expected 8 strategy families"
           sample={k:0.001 for k in features}
-          closed=[{"status":"TP","features":sample,"feature_version":"xrp-1200-v2"} for _ in range(10)]
-          assert not gate_status(closed[:9])["enabled"], "AI gate opened before 10 closes"
-          assert gate_status(closed)["enabled"], "AI gate did not open at 10 compatible closes"
+          wins=[{"status":"TP","net_return_pct":0.5,"entry":1.0,"high_water":1.03,"low_water":0.995,
+                 "features":sample,"feature_version":"xrp-1200-v2"} for _ in range(30)]
+          losses=[{"status":"SL","net_return_pct":-0.5,"entry":1.0,"high_water":1.005,"low_water":0.97,
+                   "features":sample,"feature_version":"xrp-1200-v2"} for _ in range(30)]
+          balanced=wins+losses
+          assert not gate_status(wins+losses[:29])["enabled"], "AI gate opened before 30 wins and 30 losses"
+          assert gate_status(balanced)["enabled"], "AI gate did not open at 30 balanced wins/losses"
           invalid=dict(sample);invalid[next(iter(invalid))]=float("nan")
-          bad=[{"status":"TP","features":invalid,"feature_version":"xrp-1200-v2"} for _ in range(10)]
-          assert not gate_status(bad)["enabled"], "AI gate accepted non-finite features"
-          wrong=[{"status":"TP","features":sample,"feature_version":"wrong-version"} for _ in range(10)]
-          assert not gate_status(wrong)["enabled"], "AI gate accepted an incompatible feature version"
-          print("PREFLIGHT_OK features=1205 strategies=8 ai_gate=10 finite/version_checked")
+          bad=[{"status":"TP","net_return_pct":0.5,"entry":1.0,"high_water":1.03,"low_water":0.995,
+                "features":invalid,"feature_version":"xrp-1200-v2"} for _ in range(30)]
+          assert not gate_status(bad+losses)["enabled"], "AI gate accepted non-finite features"
+          wrong=[{"status":"TP","net_return_pct":0.5,"entry":1.0,"high_water":1.03,"low_water":0.995,
+                  "features":sample,"feature_version":"wrong-version"} for _ in range(30)]
+          assert not gate_status(wrong+losses)["enabled"], "AI gate accepted an incompatible feature version"
+          print("PREFLIGHT_OK features=1205 strategies=8 ai_gate=30wins+30losses finite/version_checked")
           PY
       - name: Execute 100 cycles and persist every cycle
         env:
