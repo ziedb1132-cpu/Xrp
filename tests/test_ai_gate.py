@@ -1,6 +1,6 @@
 import unittest
 
-from ai_model import gate_status, select_entry_method, GATE_MIN_WINS, GATE_MIN_LOSSES, FEATURE_DIM
+from ai_model import gate_status, select_entry_method, _chronological_split, GATE_MIN_WINS, GATE_MIN_LOSSES, FEATURE_DIM
 from feature_engine import FEATURE_VERSION
 
 
@@ -44,6 +44,15 @@ class BalancedAIGateTests(unittest.TestCase):
         balanced = {"MARKET": {"trades": 60, "wins": 30, "losses": 30,
                                "avg_net_return_pct": 0.0, "win_rate_pct": 50.0}}
         self.assertTrue(select_entry_method(context, balanced)["learning_ready"])
+
+    def test_chronological_validation_rejects_single_class_holdout(self):
+        split, details = _chronological_split([0] * 80 + [1] * 20)
+        self.assertIsNone(split)
+        self.assertEqual(details["reason"], "chronological_split_lacks_both_classes")
+        split, details = _chronological_split(([0, 1] * 50))
+        self.assertIsNotNone(split)
+        self.assertGreaterEqual(details["validation_wins"], 3)
+        self.assertGreaterEqual(details["validation_losses"], 3)
 
     def test_incompatible_feature_snapshots_do_not_count(self):
         history = [self._signal(True, i) for i in range(30)]
