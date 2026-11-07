@@ -18,6 +18,12 @@ Independent XRP-USDT Spot market research and paper-signal engine.
 - All results are paper estimates, net of configured simulated fees and slippage; they are not a guarantee of future results.
 
 ## Genetic mutation research
+### Model-wide mutation scope
+- The separate `model_mutation_engine.py` evolves input-feature recipes (returns, volatility, candle shape, volume, RSI and EMA relationships), feature transforms and prediction horizons.
+- It also explores proposed neural-network depth/width, dropout, learning rate and weight decay. These are research candidates only; the active 1,205-feature schema and current 30-layer checkpoints remain unchanged.
+- Candidates are selected on the chronological development segment, then reported on a separate validation segment and an untouched final test segment. Validation/test metrics are not used to breed the next generation.
+- The discovered input recipe is not automatically wired into the production model. Changing the live feature schema requires a versioned checkpoint migration, retraining, out-of-sample validation and an explicit safe promotion step.
+
 - Each XRP cycle evolves a bounded population of 16 candidate strategy/exit combinations over 3 generations using mutation and crossover; the population archive is persisted inside `xrp_state.json` and is not reset on normal workflow starts.
 - Candidate genes include the strategy family, momentum/volume/RSI thresholds, TP/SL distances, and trailing activation/gap. Risk bounds preserve TP 2%-6%, SL 1%-3%, and at least 1.5:1 TP:SL distance.
 - Candidates are evaluated chronologically on a 65% development segment and a separate 35% validation segment using completed 5m candles, fee/slippage-adjusted returns, and conservative stop-first OHLC handling.
