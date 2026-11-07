@@ -23,9 +23,10 @@ def main():
     state["news_items"]=news[:250];state["news_sentiment"]=sentiment;state["news_updated_at"]=int(time.time())
     write(state)
     gate=gate_status(state.get("history",[]))
-    probability=predict_probability(features) if gate["enabled"] else None
+    is_scalp=bool(candidate and candidate.get("strategy_type")=="SCALPING")
+    probability=predict_probability(features) if gate["enabled"] and not is_scalp else None
     atr_pct=float((candidate or {}).get("atr_pct", 0.0) or 0.0)
-    exit_policy=predict_exit_policy(features,price,atr_pct=atr_pct) if gate["enabled"] else None
+    exit_policy=predict_exit_policy(features,price,atr_pct=atr_pct) if gate["enabled"] and not is_scalp else None
     if candidate and probability is not None:
         candidate["ai_win_probability"]=round(probability,5)
         # Early-stage probabilities are noisy. The independent technical/risk gate
