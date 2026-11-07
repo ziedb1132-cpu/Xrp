@@ -212,6 +212,7 @@ class SignalManager:
         pre_ai_closed=[x for x in closed if x.get("ai_win_probability") is None]
         ai_exit_closed=[x for x in closed if x.get("exit_policy_source")=="AI_LEARNED_EXIT_POLICY"]
         scalp_closed=[x for x in closed if x.get("strategy_type")=="SCALPING"]
+        scalp_closed=[x for x in closed if x.get("strategy_type")=="SCALPING"]
         summary={"price":s.get("price"),"current_price":s.get("price"),"closed_signals":len(closed),
           "risk_policy":{"standard":{"tp_min_pct":2.0,"tp_max_pct":6.0,"sl_min_pct":1.0,"sl_max_pct":3.0},
                          "scalping":{"tp_min_pct":0.90,"tp_max_pct":1.50,"sl_min_pct":0.40,"sl_max_pct":0.80},
