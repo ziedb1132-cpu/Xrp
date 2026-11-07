@@ -177,43 +177,79 @@ def _opportunity(candles, context=None, book=None, recent_stats=None):
 
 
 def _backtest(candles, name):
+    """Chronological fee-aware simulation using the same ATR exits and trailing rules."""
     trades = []
-    fee = ROUND_TRIP_COST_PCT
     i = 40
+    horizon = 48
     while i < len(candles) - 1:
         flags = _flags(candles[:i + 1])
         if not flags.get(name):
             i += 1
             continue
         entry = float(candles[i]["c"])
-        tp, sl = entry * 1.012, entry * 0.993
+        atr_pct = _atr_pct(candles[:i + 1])
+        tp_pct = min(6.0, max(2.0, atr_pct * 2.0))
+        sl_pct = min(3.0, max(1.0, atr_pct * 1.20))
+        tp_pct = min(6.0, max(tp_pct, sl_pct * 1.50))
+        tp = entry * (1.0 + tp_pct / 100.0)
+        sl = entry * (1.0 - sl_pct / 100.0)
+        activation_price = entry * (1.0 + tp_pct * 0.30 / 100.0)
+        high_water = entry
         exit_price = None
         exit_index = None
-        for j in range(i + 1, min(len(candles), i + 49)):
+        exit_reason = None
+        end = min(len(candles), i + horizon + 1)
+        for j in range(i + 1, end):
             bar = candles[j]
-            if float(bar["l"]) <= sl:
-                exit_price, exit_index = sl, j
+            bar_low, bar_high = float(bar["l"]), float(bar["h"])
+            # Conservative intrabar ordering: if TP and SL are both touched,
+            # count the stop first because OHLC data cannot reveal the path.
+            if bar_low <= sl:
+                exit_price, exit_index, exit_reason = sl, j, "SL"
                 break
-            if float(bar["h"]) >= tp:
-                exit_price, exit_index = tp, j
+            if bar_high >= tp:
+                exit_price, exit_index, exit_reason = tp, j, "TP"
                 break
+            close = float(bar["c"])
+            high_water = max(high_water, close)
+            if close >= activation_price:
+                break_even = entry * (1.0 + ROUND_TRIP_COST_PCT / 100.0)
+                proposed = max(break_even, high_water * 0.993)
+                sl = max(sl, proposed)
         if exit_price is None:
-            i = min(len(candles) - 1, i + 48)
-            continue
-        trades.append((exit_price / entry - 1) * 100 - fee)
+            exit_index = end - 1
+            if exit_index <= i:
+                i += 1
+                continue
+            exit_price = float(candles[exit_index]["c"])
+            exit_reason = "TIME_OUT"
+        gross = (exit_price / entry - 1.0) * 100.0
+        trades.append({
+            "net": gross - ROUND_TRIP_COST_PCT,
+            "gross": gross,
+            "reason": exit_reason,
+            "tp_pct": tp_pct,
+            "sl_pct": sl_pct,
+        })
         i = exit_index + 1
-    wins = [x for x in trades if x > 0]
-    losses = [x for x in trades if x < 0]
+    net_values = [x["net"] for x in trades]
+    wins = [x for x in net_values if x > 0]
+    losses = [x for x in net_values if x < 0]
     gross_win, gross_loss = sum(wins), abs(sum(losses))
     pf = gross_win / gross_loss if gross_loss else (99.0 if wins else 0.0)
     return {
         "trades": len(trades), "wins": len(wins), "losses": len(losses),
+        "tp_exits": sum(1 for x in trades if x["reason"] == "TP"),
+        "sl_exits": sum(1 for x in trades if x["reason"] == "SL"),
+        "time_exits": sum(1 for x in trades if x["reason"] == "TIME_OUT"),
         "win_rate_pct": round(100 * len(wins) / len(trades), 2) if trades else None,
         "profit_factor": round(pf, 3),
-        "expectancy_pct": round(sum(trades) / len(trades), 4) if trades else None,
-        "eligible": len(trades) >= 20 and pf > 1.0 and sum(trades) > 0,
+        "expectancy_pct": round(sum(net_values) / len(net_values), 4) if net_values else None,
+        "avg_win_pct": round(sum(wins) / len(wins), 4) if wins else None,
+        "avg_loss_pct": round(sum(losses) / len(losses), 4) if losses else None,
+        "eligible": len(trades) >= 20 and pf > 1.05 and bool(net_values) and sum(net_values) > 0,
+        "backtest_model": "ATR_TP_SL_FEE_AWARE_TRAILING_30PCT",
     }
-
 
 def evaluate_strategies(candles, market_context=None, book=None, recent_stats=None):
     flags = _flags(candles)
