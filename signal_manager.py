@@ -186,7 +186,25 @@ class SignalManager:
             peak=max(peak,equity)
             if peak>0:max_drawdown=max(max_drawdown,(peak-equity)/peak*100.0)
         trailing_closed=sum(1 for x in closed if int(x.get("trailing_updates",0) or 0)>0)
+        def _performance_group(items):
+            values=[float(x.get("net_return_pct",0) or 0) for x in items]
+            positive=[x for x in values if x>0]
+            negative=[x for x in values if x<0]
+            gross_win=sum(positive);gross_loss=abs(sum(negative))
+            return {
+                "signals":len(values),
+                "win_rate_pct":round(100*len(positive)/len(values),2) if values else None,
+                "net_profit_pct":round(sum(values),5),
+                "expectancy_pct":round(sum(values)/len(values),5) if values else None,
+                "profit_factor":round(gross_win/gross_loss,4) if gross_loss else (99.0 if gross_win else 0.0),
+            }
+        ai_closed=[x for x in closed if x.get("ai_win_probability") is not None]
+        pre_ai_closed=[x for x in closed if x.get("ai_win_probability") is None]
+        ai_exit_closed=[x for x in closed if x.get("exit_policy_source")=="AI_LEARNED_EXIT_POLICY"]
         summary={"price":s.get("price"),"current_price":s.get("price"),"closed_signals":len(closed),
+          "ai_performance":_performance_group(ai_closed),
+          "pre_ai_performance":_performance_group(pre_ai_closed),
+          "ai_exit_performance":_performance_group(ai_exit_closed),
           "gross_profit_pct":round(sum(gross_values),5),
           "buy_fees_pct":round(sum(float(x.get("buy_fee_pct",FEE_PCT) or 0) for x in closed),5),
           "sell_fees_pct":round(sum(float(x.get("sell_fee_pct",FEE_PCT) or 0) for x in closed),5),
