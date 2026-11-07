@@ -134,6 +134,30 @@ def _load_checkpoint(path, architecture):
         return None
 
 
+def _chronological_split(labels, min_train_per_class=10, min_validation_per_class=3):
+    """Keep time order and reject validation windows missing either outcome."""
+    if len(labels) < (min_train_per_class * 2 + min_validation_per_class * 2):
+        return None, {"reason": "insufficient_samples"}
+    split = max(1, int(len(labels) * 0.8))
+    if split >= len(labels):
+        split = len(labels) - 1
+    train_labels = labels[:split]
+    validation_labels = labels[split:]
+    train_wins = sum(1 for value in train_labels if value == 1)
+    train_losses = len(train_labels) - train_wins
+    validation_wins = sum(1 for value in validation_labels if value == 1)
+    validation_losses = len(validation_labels) - validation_wins
+    counts = {
+        "train_wins": train_wins, "train_losses": train_losses,
+        "validation_wins": validation_wins, "validation_losses": validation_losses,
+    }
+    if (train_wins < min_train_per_class or train_losses < min_train_per_class
+            or validation_wins < min_validation_per_class
+            or validation_losses < min_validation_per_class):
+        return None, {"reason": "chronological_split_lacks_both_classes", **counts}
+    return split, counts
+
+
 def _normalizer(raw_train, previous):
     if previous:
         mean = torch.tensor(previous["feature_mean"], dtype=torch.float32)
@@ -150,9 +174,10 @@ def _train_classifier(eligible, previous):
         return None, "feature schema mismatch"
     rows = [[float(item["features"][key]) for key in keys] for item in eligible]
     labels = [_outcome(item) for item in eligible]
-    split = max(1, int(len(rows) * 0.8))
-    if split >= len(rows):
-        split = len(rows) - 1
+    split, split_counts = _chronological_split(labels)
+    if split is None:
+        return None, "chronological train/validation split lacks enough wins and losses"
+
     raw_train = torch.tensor(rows[:split], dtype=torch.float32)
     raw_val = torch.tensor(rows[split:], dtype=torch.float32)
     y = torch.tensor(labels[:split], dtype=torch.float32).view(-1, 1)
@@ -197,6 +222,7 @@ def _train_classifier(eligible, previous):
         "validation_samples": len(xv), "train_loss": float(loss.detach()),
         "validation_loss": val_loss, "validation_accuracy": val_accuracy,
         "validation_brier": val_brier, "resumed_previous_model": bool(previous),
+        "chronological_split": split_counts,
     }, None
 
 
@@ -211,9 +237,11 @@ def _train_exit_policy(eligible, previous):
         return {"trained": False, "reason": "feature schema mismatch", "samples": len(samples)}
     rows = [[float(item["features"][key]) for key in keys] for item, _ in samples]
     targets = [target for _, target in samples]
-    split = max(1, int(len(rows) * 0.8))
-    if split >= len(rows):
-        split = len(rows) - 1
+    labels = [_outcome(item) for item, _ in samples]
+    split, split_counts = _chronological_split(labels)
+    if split is None:
+        return {"trained": False, "reason": "chronological exit-policy split lacks enough wins and losses",
+                "samples": len(samples), "chronological_split": split_counts}
     raw_train = torch.tensor(rows[:split], dtype=torch.float32)
     raw_val = torch.tensor(rows[split:], dtype=torch.float32)
     y = torch.tensor(targets[:split], dtype=torch.float32)
@@ -252,7 +280,8 @@ def _train_exit_policy(eligible, previous):
     }, EXIT_MODEL_PATH)
     return {"trained": True, "samples": len(rows), "train_samples": len(x),
             "validation_samples": len(xv), "train_loss": float(loss.detach()),
-            "validation_loss": val_loss, "resumed_previous_model": bool(previous)}
+            "validation_loss": val_loss, "resumed_previous_model": bool(previous),
+            "chronological_split": split_counts}
 
 
 def train(history, epochs=2):
