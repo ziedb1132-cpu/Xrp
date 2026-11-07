@@ -24,7 +24,8 @@ def main():
     write(state)
     gate=gate_status(state.get("history",[]))
     probability=predict_probability(features) if gate["enabled"] else None
-    exit_policy=predict_exit_policy(features,price) if gate["enabled"] else None
+    atr_pct=float((candidate or {}).get("atr_pct", 0.0) or 0.0)
+    exit_policy=predict_exit_policy(features,price,atr_pct=atr_pct) if gate["enabled"] else None
     if candidate and probability is not None:
         candidate["ai_win_probability"]=round(probability,5)
         # Early-stage probabilities are noisy. The independent technical/risk gate
@@ -39,11 +40,12 @@ def main():
             candidate.update(exit_policy)
             candidate["exit_policy_source"]="AI_LEARNED_EXIT_POLICY"
             candidate["exit_policy_samples"]=exit_policy.get("model_samples",0)
+            candidate["exit_distance_source"]="AI_LEARNED_PLUS_ATR_GUARD"
         else:
-            # Safe initial levels until the exit model has enough observed excursions.
-            candidate["tp"]=price*(1+float(candidate.get("tp_distance_pct",1.30))/100.0)
-            candidate["sl"]=price*(1-float(candidate.get("sl_distance_pct",0.65))/100.0)
-            candidate["exit_policy_source"]="FIXED_FALLBACK"
+            # ATR-adaptive fallback until the learned exit model is ready.
+            candidate["tp"]=price*(1+float(candidate.get("tp_distance_pct",0.80))/100.0)
+            candidate["sl"]=price*(1-float(candidate.get("sl_distance_pct",0.45))/100.0)
+            candidate["exit_policy_source"]="ATR_VOLATILITY_ADAPTIVE"
             candidate["exit_policy_samples"]=gate.get("exit_policy_samples",0)
     SignalManager().cycle(price,candidate,ranked,features,context)
     # Live execution is separately opt-in and observes only newly generated signals.
