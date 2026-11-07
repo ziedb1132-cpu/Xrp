@@ -12,6 +12,30 @@ GATE_CLOSED = GATE_MIN_WINS + GATE_MIN_LOSSES
 MODEL_ARCH_VERSION = "deep30x128-v1"
 EXIT_ARCH_VERSION = "exit30x128-v1"
 FEATURE_DIM = 1205
+OVERFIT_GUARD_VERSION = 1
+MAX_VALIDATION_LOSS = 0.69
+MAX_VALIDATION_BRIER = 0.245
+MIN_VALIDATION_BALANCED_ACCURACY = 0.50
+MAX_GENERALIZATION_GAP = 0.25
+
+def _overfit_guard(train_loss, validation_loss, validation_brier, balanced_accuracy):
+    """Conservative chronological holdout gate; fail closed on weak/unstable validation."""
+    values = (train_loss, validation_loss, validation_brier, balanced_accuracy)
+    if not all(isinstance(value, (int, float)) and math.isfinite(float(value)) for value in values):
+        return {"passed": False, "reason": "non_finite_validation_metric"}
+    gap = float(validation_loss) - float(train_loss)
+    checks = {
+        "validation_loss_ok": float(validation_loss) <= MAX_VALIDATION_LOSS,
+        "validation_brier_ok": float(validation_brier) <= MAX_VALIDATION_BRIER,
+        "balanced_accuracy_ok": float(balanced_accuracy) >= MIN_VALIDATION_BALANCED_ACCURACY,
+        "generalization_gap_ok": gap <= MAX_GENERALIZATION_GAP,
+    }
+    return {"passed": all(checks.values()),
+            "reason": "validation_passed" if all(checks.values()) else "overfit_or_weak_out_of_sample_performance",
+            "train_loss": round(float(train_loss), 6), "validation_loss": round(float(validation_loss), 6),
+            "validation_brier": round(float(validation_brier), 6),
+            "validation_balanced_accuracy": round(float(balanced_accuracy), 6),
+            "generalization_gap": round(gap, 6), "checks": checks, "guard_version": OVERFIT_GUARD_VERSION}
 
 try:
     import torch
@@ -127,7 +151,9 @@ def _load_checkpoint(path, architecture):
                 or len(data["feature_mean"]) != FEATURE_DIM
                 or len(data["feature_std"]) != FEATURE_DIM
                 or int(data.get("trained_wins", 0)) < GATE_MIN_WINS
-                or int(data.get("trained_losses", 0)) < GATE_MIN_LOSSES):
+                or int(data.get("trained_losses", 0)) < GATE_MIN_LOSSES
+                or data.get("overfit_guard_version") != OVERFIT_GUARD_VERSION
+                or data.get("overfit_guard_passed") is not True):
             return None
         return data
     except Exception:
@@ -205,25 +231,34 @@ def _train_classifier(eligible, previous):
         optimizer.step()
     model.eval()
     with torch.no_grad():
+        train_loss = float(loss_fn(model(x), y))
         val_logits = model(xv) if len(xv) else None
         val_loss = float(loss_fn(val_logits, yv)) if val_logits is not None else None
         val_probs = torch.sigmoid(val_logits) if val_logits is not None else None
         val_accuracy = float(((val_probs >= 0.5) == (yv >= 0.5)).float().mean()) if val_probs is not None else None
         val_brier = float(((val_probs - yv) ** 2).mean()) if val_probs is not None else None
-    torch.save({
-        "state_dict": model.state_dict(), "optimizer_state_dict": optimizer.state_dict(),
-        "input_dim": len(keys), "feature_version": FEATURE_VERSION,
-        "architecture": MODEL_ARCH_VERSION, "feature_mean": mean.tolist(),
-        "feature_std": std.tolist(), "trained_samples": len(rows),
+        val_predictions = (val_probs >= 0.5).float()
+        positive_mask = yv >= 0.5
+        negative_mask = yv < 0.5
+        positive_recall = float((val_predictions[positive_mask] == 1).float().mean()) if positive_mask.any() else 0.0
+        negative_recall = float((val_predictions[negative_mask] == 0).float().mean()) if negative_mask.any() else 0.0
+        balanced_accuracy = (positive_recall + negative_recall) / 2.0
+    guard = _overfit_guard(train_loss, val_loss, val_brier, balanced_accuracy)
+    diagnostics = {"trained": False, "samples": len(rows), "train_samples": len(x),
+        "validation_samples": len(xv), "train_loss": train_loss, "validation_loss": val_loss,
+        "validation_accuracy": val_accuracy, "validation_brier": val_brier,
+        "validation_balanced_accuracy": balanced_accuracy, "overfit_guard": guard,
+        "resumed_previous_model": bool(previous), "chronological_split": split_counts}
+    if not guard["passed"]:
+        return diagnostics, "overfit guard rejected model; previous approved checkpoint retained"
+    torch.save({"state_dict": model.state_dict(), "optimizer_state_dict": optimizer.state_dict(),
+        "input_dim": len(keys), "feature_version": FEATURE_VERSION, "architecture": MODEL_ARCH_VERSION,
+        "feature_mean": mean.tolist(), "feature_std": std.tolist(), "trained_samples": len(rows),
         "trained_wins": sum(labels), "trained_losses": len(labels) - sum(labels),
-    }, MODEL_PATH)
-    return {
-        "trained": True, "samples": len(rows), "train_samples": len(x),
-        "validation_samples": len(xv), "train_loss": float(loss.detach()),
-        "validation_loss": val_loss, "validation_accuracy": val_accuracy,
-        "validation_brier": val_brier, "resumed_previous_model": bool(previous),
-        "chronological_split": split_counts,
-    }, None
+        "overfit_guard_version": OVERFIT_GUARD_VERSION, "overfit_guard_passed": True,
+        "overfit_guard": guard}, MODEL_PATH)
+    diagnostics["trained"] = True
+    return diagnostics, None
 
 
 def _train_exit_policy(eligible, previous):
@@ -295,13 +330,14 @@ def train(history, epochs=2):
     previous = _load_checkpoint(MODEL_PATH, MODEL_ARCH_VERSION)
     classifier, error = _train_classifier(eligible, previous)
     if error:
-        return {"trained": False, "reason": error, "gate": gate}
+        return {"trained": False, "reason": error, "gate": gate,
+                "overfit_guard": classifier.get("overfit_guard") if isinstance(classifier, dict) else None}
     exit_previous = _load_checkpoint(EXIT_MODEL_PATH, EXIT_ARCH_VERSION)
     exit_policy = _train_exit_policy(eligible, exit_previous)
     classifier["exit_policy"] = exit_policy
     classifier["trained"] = True
     classifier["gate"] = gate
-    classifier["warning"] = "Early-stage model: small sample size; probability and exit levels are experimental."
+    classifier["warning"] = "Chronological holdout passed; continue monitoring live paper results because validation is not a guarantee of future performance."
     return classifier
 
 
