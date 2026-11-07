@@ -70,7 +70,9 @@ def _open(p,price,now,s):
        "features":p.get("features",{}),"feature_version":p.get("feature_version","xrp-1200-v2"),
        "strategy_name":p.get("strategy_name","BASELINE_MOMENTUM"),
        "strategy_description":p.get("strategy_description","AI-selected entry setup"),
-       "strategy_score":float(p.get("strategy_score",50)),"ai_win_probability":p.get("ai_win_probability"),
+       "strategy_score":float(p.get("strategy_score",50)),"opportunity_score":p.get("opportunity_score"),
+       "expected_net_edge_pct":p.get("expected_net_edge_pct"),"selection_source":p.get("selection_source"),
+       "ai_win_probability":p.get("ai_win_probability"),
        "exit_policy_source":p.get("exit_policy_source","FIXED_FALLBACK"),
        "exit_policy_samples":p.get("exit_policy_samples",0),"predicted_mfe_pct":p.get("predicted_mfe_pct"),
        "predicted_mae_pct":p.get("predicted_mae_pct"),"tp_distance_pct":tp_distance,"sl_distance_pct":sl_distance,
@@ -138,13 +140,13 @@ class SignalManager:
         write(s);self.write_summary(s)
     def write_summary(self,s):
         source=s.get("open_signal")
-        allowed=("id","signal_id","symbol","side","entry","tp","sl","original_tp","original_sl","tp_old","tp_new","sl_old","sl_new","high_water","low_water","opened_at","status","strategy_name","strategy_description","strategy_score","ai_win_probability","exit_policy_source","exit_policy_samples","predicted_mfe_pct","predicted_mae_pct","tp_distance_pct","sl_distance_pct","entry_method","entry_method_scores","entry_policy_source","entry_trigger_price","entry_reason","timeframe","market_regime","opened_price","trailing_updates","risk_history","sl_updated_at","change_reason")
+        allowed=("id","signal_id","symbol","side","entry","tp","sl","original_tp","original_sl","tp_old","tp_new","sl_old","sl_new","high_water","low_water","opened_at","status","strategy_name","strategy_description","strategy_score","opportunity_score","expected_net_edge_pct","selection_source","ai_win_probability","exit_policy_source","exit_policy_samples","predicted_mfe_pct","predicted_mae_pct","tp_distance_pct","sl_distance_pct","entry_method","entry_method_scores","entry_policy_source","entry_trigger_price","entry_reason","timeframe","market_regime","opened_price","trailing_updates","risk_history","sl_updated_at","change_reason")
         a={key:source[key] for key in allowed if key in source} if isinstance(source,dict) else None
         if a and isinstance(a.get("risk_history"),list):a["risk_history"]=a["risk_history"][-20:]
         pending=s.get("pending_signal")
         p=None
         if isinstance(pending,dict):
-            p={key:pending[key] for key in ("entry_method","entry_policy_source","entry_trigger_price","entry_retest_price","entry_support_price","entry_stage","pending_since","strategy_name","strategy_score","entry_reason") if key in pending}
+            p={key:pending[key] for key in ("entry_method","entry_policy_source","entry_trigger_price","entry_retest_price","entry_support_price","entry_stage","pending_since","strategy_name","strategy_score","opportunity_score","expected_net_edge_pct","selection_source","entry_reason") if key in pending}
         closed=[x for x in s.get("history",[]) if x.get("status") in ("TP","SL")]
         net_values=[float(x.get("net_return_pct",0) or 0) for x in closed]
         gross_values=[float(x.get("gross_return_pct",0) or 0) for x in closed]
