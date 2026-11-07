@@ -116,5 +116,87 @@ class XRPExecutionSafetyTests(unittest.TestCase):
         self.assertEqual(api.placed, [])
 
 
+
+class XRPAutomaticResumeTests(unittest.TestCase):
+    def _saved_state(self, path, reason="No available USDT balance."):
+        state = {
+            "initialized": True, "baseline_signal_id": 4, "processed_signal_ids": [5],
+            "orders": [{"signal_id": 5, "clOrdId": "xrp000000000005",
+                        "status": "error_halted", "error": reason}],
+            "halted": True, "halt_reason": reason, "attempts": []
+        }
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump(state, handle)
+
+    def test_positive_balance_resumes_without_replaying_old_signal(self):
+        from decimal import Decimal
+        from unittest.mock import Mock
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "xrp_live_state.json")
+            self._saved_state(path)
+            api = Mock()
+            api.available_usdt.return_value = Decimal("25.00")
+            api.request.return_value = []
+            api.pending_algos.return_value = []
+            api.xrp_balance.return_value = {"available": Decimal("0"), "total": Decimal("0")}
+            with patch("okx_live.STATE_FILE", path), patch("okx_live.OKX", return_value=api), \\
+                 patch.dict("os.environ", {"XRP_LIVE_TRADING_ENABLED": "true", "OKX_DEMO_TRADING": "false"}, clear=False):
+                result = process_live({"total_signals": 13, "open_signal": None})
+            with open(path, encoding="utf-8") as handle:
+                saved = json.load(handle)
+            self.assertEqual(result["status"], "resumed_waiting_for_new_signal")
+            self.assertFalse(saved["halted"])
+            self.assertEqual(saved["processed_signal_ids"], [5])
+            self.assertEqual(saved["orders"][0]["status"], "skipped_no_funds")
+            self.assertEqual(saved["resume_check"]["status"], "resumed")
+
+    def test_zero_balance_keeps_halt_active(self):
+        from decimal import Decimal
+        from unittest.mock import Mock
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "xrp_live_state.json")
+            self._saved_state(path)
+            api = Mock()
+            api.available_usdt.return_value = Decimal("0")
+            with patch("okx_live.STATE_FILE", path), patch("okx_live.OKX", return_value=api), \\
+                 patch.dict("os.environ", {"XRP_LIVE_TRADING_ENABLED": "true", "OKX_DEMO_TRADING": "false"}, clear=False):
+                result = process_live({"total_signals": 13, "open_signal": None})
+            with open(path, encoding="utf-8") as handle:
+                saved = json.load(handle)
+            self.assertEqual(result["status"], "waiting_for_usdt")
+            self.assertTrue(saved["halted"])
+            api.request.assert_not_called()
+
+    def test_existing_xrp_or_orders_prevent_automatic_resume(self):
+        from decimal import Decimal
+        from unittest.mock import Mock
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "xrp_live_state.json")
+            self._saved_state(path)
+            api = Mock()
+            api.available_usdt.return_value = Decimal("25")
+            api.request.return_value = [{"ordId": "manual-open-order"}]
+            api.pending_algos.return_value = []
+            api.xrp_balance.return_value = {"available": Decimal("0"), "total": Decimal("0")}
+            with patch("okx_live.STATE_FILE", path), patch("okx_live.OKX", return_value=api), \\
+                 patch.dict("os.environ", {"XRP_LIVE_TRADING_ENABLED": "true", "OKX_DEMO_TRADING": "false"}, clear=False):
+                result = process_live({"total_signals": 13, "open_signal": None})
+            with open(path, encoding="utf-8") as handle:
+                saved = json.load(handle)
+            self.assertEqual(result["status"], "halted_reconciliation_required")
+            self.assertTrue(saved["halted"])
+
+    def test_non_balance_safety_halt_is_never_auto_cleared(self):
+        from unittest.mock import Mock
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "xrp_live_state.json")
+            self._saved_state(path, "URGENT: unknown XRP position.")
+            with patch("okx_live.STATE_FILE", path), patch("okx_live.OKX") as api_class, \\
+                 patch.dict("os.environ", {"XRP_LIVE_TRADING_ENABLED": "true", "OKX_DEMO_TRADING": "false"}, clear=False):
+                result = process_live({"total_signals": 13, "open_signal": None})
+            self.assertEqual(result["status"], "halted")
+            api_class.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()
