@@ -17,7 +17,7 @@ jobs:
           python-version: "3.11"
       - name: Install minimal test dependency
         run: pip install requests
-      - name: Compile live adapter
-        run: python -m py_compile okx_live.py
+      - name: Compile changed engine modules
+        run: python -m py_compile okx_live.py strategy_engine.py xrp_engine.py run_cycle.py signal_manager.py ai_model.py feature_engine.py
       - name: Run offline safety tests
         run: python -m unittest discover -s tests -v
