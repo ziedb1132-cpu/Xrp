@@ -32,6 +32,34 @@ def _save(s):
         json.dump(s, f, ensure_ascii=False, separators=(",", ":"))
     os.replace(tmp, STATE_FILE)
 
+def _scalping_paper_gate(signal_state, required=30):
+    """Only promote scalp signals to live after a meaningful positive paper record."""
+    rows = [
+        x for x in signal_state.get("history", [])
+        if isinstance(x, dict) and x.get("strategy_type") == "SCALPING"
+        and x.get("status") in ("TP", "SL")
+    ]
+    values = []
+    for row in rows:
+        try:
+            value = float(row.get("net_return_pct", 0) or 0)
+            if not __import__("math").isfinite(value):
+                continue
+            values.append(value)
+        except (TypeError, ValueError):
+            continue
+    winners = [x for x in values if x > 0]
+    losers = [x for x in values if x < 0]
+    gross_win, gross_loss = sum(winners), abs(sum(losers))
+    pf = gross_win / gross_loss if gross_loss else (99.0 if gross_win else 0.0)
+    net = sum(values)
+    eligible = len(values) >= required and pf > 1.05 and net > 0
+    return {
+        "eligible": eligible, "closed_scalps": len(values), "required_closed": required,
+        "profit_factor": round(pf, 4), "net_profit_pct": round(net, 5),
+        "win_rate_pct": round(100 * len(winners) / len(values), 2) if values else None,
+    }
+
 class OKX:
     def __init__(self):
         self.key = os.getenv("OKX_API_KEY", "")
@@ -342,6 +370,11 @@ def _process_live(signal_state):
     processed = set(int(x) for x in live.get("processed_signal_ids", []))
     if sid in processed:
         return {"enabled": True, "status": "already_processed", "signal_id": sid}
+    if signal.get("strategy_type") == "SCALPING":
+        scalp_gate = _scalping_paper_gate(signal_state)
+        if not scalp_gate["eligible"]:
+            return {"enabled": True, "status": "scalping_paper_validation_required",
+                    "signal_id": sid, "paper_validation": scalp_gate}
 
     # Persist the one-shot intent before any order request to prevent duplicate buys after a runner restart.
     live.setdefault("processed_signal_ids", []).append(sid)
