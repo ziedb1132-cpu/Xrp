@@ -6,7 +6,9 @@ from feature_engine import FEATURE_VERSION
 
 MODEL_PATH = "xrp_model.pt"
 EXIT_MODEL_PATH = "xrp_exit_policy.pt"
-GATE_CLOSED = 10
+GATE_MIN_WINS = 30
+GATE_MIN_LOSSES = 30
+GATE_CLOSED = GATE_MIN_WINS + GATE_MIN_LOSSES
 MODEL_ARCH_VERSION = "deep30x128-v1"
 EXIT_ARCH_VERSION = "exit30x128-v1"
 FEATURE_DIM = 1205
@@ -91,17 +93,24 @@ def _excursion_targets(item):
 def gate_status(history):
     closed = [x for x in history if x.get("status") in ("TP", "SL")]
     compatible = [x for x in closed if _valid_features(x)]
-    wins = sum(1 for item in closed if _outcome(item) == 1)
+    wins = sum(1 for item in compatible if _outcome(item) == 1)
+    losses = len(compatible) - wins
     exit_samples = sum(1 for item in compatible if _excursion_targets(item) is not None)
+    # A balanced gate prevents a model trained almost entirely on one outcome
+    # from being treated as decision-ready.
+    enabled = wins >= GATE_MIN_WINS and losses >= GATE_MIN_LOSSES and exit_samples >= GATE_CLOSED
     return {
         "closed_signals": len(closed),
         "compatible_signals": len(compatible),
         "required_closed": GATE_CLOSED,
+        "required_wins": GATE_MIN_WINS,
+        "required_losses": GATE_MIN_LOSSES,
         "wins": wins,
-        "losses": len(closed) - wins,
-        "enabled": len(compatible) >= GATE_CLOSED,
+        "losses": losses,
+        "enabled": enabled,
         "exit_policy_samples": exit_samples,
         "exit_policy_required": GATE_CLOSED,
+        "gate_reason": "balanced_sample_ready" if enabled else "requires_30_compatible_wins_and_30_losses",
     }
 
 
@@ -193,7 +202,7 @@ def _train_exit_policy(eligible, previous):
     samples = [(item, _excursion_targets(item)) for item in eligible]
     samples = [(item, target) for item, target in samples if target is not None]
     if len(samples) < GATE_CLOSED:
-        return {"trained": False, "reason": "10 closed signals with observed price excursions required",
+        return {"trained": False, "reason": "60 balanced compatible closed signals with observed price excursions required",
                 "samples": len(samples)}
     keys = sorted(samples[0][0]["features"])
     if any(sorted(item["features"]) != keys for item, _ in samples):
@@ -247,7 +256,7 @@ def train(history, epochs=2):
     if torch is None:
         return {"trained": False, "reason": "torch unavailable", "gate": gate}
     if not gate["enabled"]:
-        return {"trained": False, "reason": "10 closed signals with compatible feature snapshots required", "gate": gate}
+        return {"trained": False, "reason": "at least 30 compatible wins and 30 compatible losses required", "gate": gate}
     eligible = [item for item in history
                 if item.get("status") in ("TP", "SL") and _valid_features(item)]
     previous = _load_checkpoint(MODEL_PATH, MODEL_ARCH_VERSION)
