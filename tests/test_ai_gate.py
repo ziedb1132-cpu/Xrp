@@ -1,6 +1,6 @@
 import unittest
 
-from ai_model import gate_status, GATE_MIN_WINS, GATE_MIN_LOSSES, FEATURE_DIM
+from ai_model import gate_status, select_entry_method, GATE_MIN_WINS, GATE_MIN_LOSSES, FEATURE_DIM
 from feature_engine import FEATURE_VERSION
 
 
@@ -33,6 +33,17 @@ class BalancedAIGateTests(unittest.TestCase):
         self.assertFalse(result["enabled"])
         self.assertEqual(result["wins"], 59)
         self.assertEqual(result["losses"], 1)
+
+    def test_entry_method_learning_also_requires_balanced_outcomes(self):
+        context = {"regime": "range", "trend": 0.0, "volatility": 0.001}
+        losing = {"MARKET": {"trades": 60, "wins": 0, "losses": 60,
+                             "avg_net_return_pct": -0.5, "win_rate_pct": 0.0}}
+        result = select_entry_method(context, losing)
+        self.assertFalse(result["learning_ready"])
+        self.assertIn("30_WINS_30_LOSSES", result["source"])
+        balanced = {"MARKET": {"trades": 60, "wins": 30, "losses": 30,
+                               "avg_net_return_pct": 0.0, "win_rate_pct": 50.0}}
+        self.assertTrue(select_entry_method(context, balanced)["learning_ready"])
 
     def test_incompatible_feature_snapshots_do_not_count(self):
         history = [self._signal(True, i) for i in range(30)]
