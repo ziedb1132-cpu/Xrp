@@ -304,19 +304,29 @@ def _train_exit_policy(eligible, previous):
         optimizer.step()
     model.eval()
     with torch.no_grad():
+        train_loss = float(loss_fn(model(x), y))
         val_loss = float(loss_fn(model(xv), yv)) if len(xv) else None
-    torch.save({
-        "state_dict": model.state_dict(), "optimizer_state_dict": optimizer.state_dict(),
-        "input_dim": len(keys), "feature_version": FEATURE_VERSION,
-        "architecture": EXIT_ARCH_VERSION, "feature_mean": mean.tolist(),
-        "feature_std": std.tolist(), "trained_samples": len(rows),
+    gap = (val_loss - train_loss) if val_loss is not None else float("inf")
+    guard_passed = (val_loss is not None and math.isfinite(val_loss)
+                    and math.isfinite(train_loss) and gap <= MAX_GENERALIZATION_GAP)
+    diagnostics = {"trained": False, "samples": len(rows), "train_samples": len(x),
+        "validation_samples": len(xv), "train_loss": train_loss, "validation_loss": val_loss,
+        "generalization_gap": round(gap, 6) if math.isfinite(gap) else None,
+        "overfit_guard_passed": guard_passed, "resumed_previous_model": bool(previous),
+        "chronological_split": split_counts}
+    if not guard_passed:
+        diagnostics["reason"] = "exit_policy_overfit_guard_rejected"
+        return diagnostics
+    torch.save({"state_dict": model.state_dict(), "optimizer_state_dict": optimizer.state_dict(),
+        "input_dim": len(keys), "feature_version": FEATURE_VERSION, "architecture": EXIT_ARCH_VERSION,
+        "feature_mean": mean.tolist(), "feature_std": std.tolist(), "trained_samples": len(rows),
         "trained_wins": sum(_outcome(item) for item, _ in samples),
         "trained_losses": len(samples) - sum(_outcome(item) for item, _ in samples),
-    }, EXIT_MODEL_PATH)
-    return {"trained": True, "samples": len(rows), "train_samples": len(x),
-            "validation_samples": len(xv), "train_loss": float(loss.detach()),
-            "validation_loss": val_loss, "resumed_previous_model": bool(previous),
-            "chronological_split": split_counts}
+        "overfit_guard_version": OVERFIT_GUARD_VERSION, "overfit_guard_passed": True,
+        "overfit_guard": {"passed": True, "generalization_gap": round(gap, 6),
+                          "guard_version": OVERFIT_GUARD_VERSION}}, EXIT_MODEL_PATH)
+    diagnostics["trained"] = True
+    return diagnostics
 
 
 def train(history, epochs=2):
