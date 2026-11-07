@@ -28,6 +28,20 @@ class OpportunityEngineTests(unittest.TestCase):
         self.assertGreaterEqual(result["confirmations"], 3)
         self.assertGreater(result["expected_net_edge_pct"], 0.03)
 
+    def test_exit_distances_are_adaptive_and_risk_bounded(self):
+        candles = rising_candles()
+        result = _opportunity(
+            candles,
+            {"regime": "bullish", "trend_15m": 0.004, "trend_1h": 0.006, "trend_4h": 0.003},
+            {"imbalance": 0.20, "spread_pct": 0.02},
+        )
+        self.assertGreaterEqual(result["tp_distance_pct"], 0.80)
+        self.assertGreaterEqual(result["sl_distance_pct"], 0.45)
+        self.assertLessEqual(result["tp_distance_pct"], 4.0)
+        self.assertLessEqual(result["sl_distance_pct"], 2.0)
+        self.assertGreaterEqual(result["tp_distance_pct"], result["sl_distance_pct"] * 1.5)
+        self.assertEqual(result["exit_distance_source"], "ATR_VOLATILITY_ADAPTIVE")
+
     def test_wide_spread_blocks_entry(self):
         result = _opportunity(
             rising_candles(),
