@@ -224,7 +224,7 @@ def evolve_population(candles, memory=None):
         "archive": unique,
         "last_validation": v,
         "last_train": best["train"],
-        "last_promoted": bool(promoted),
+        "last_validation_passed": bool(promoted),
         "updated_at": int(candles[-1].get("ts", 0)),
     }
     report = {
@@ -237,7 +237,7 @@ def evolve_population(candles, memory=None):
         "best_genome": best["genome"],
         "train": best["train"],
         "validation": v,
-        "promoted": bool(promoted),
+        "validation_passed": bool(promoted),
         "promotion_rule": "validation>=5 trades, positive net expectancy and profit, PF>1.05; train also positive",
         "live_execution_enabled": False,
     }
