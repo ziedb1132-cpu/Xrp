@@ -4,9 +4,17 @@ from scalping_engine import evaluate_scalping
 
 
 def make_candles(count, step=0.00015):
+    import math
+    closes = [1.0 + i * step + 0.0003 * math.sin(i * 0.21) for i in range(count)]
+    if count >= 20:
+        deltas = [0.0004, -0.00025, 0.0004, -0.00025, -0.00025, 0.0004, -0.00025,
+                  -0.00025, 0.0004, -0.00025, -0.00025, 0.0004, 0.0004, 0.0004]
+        start = count - len(deltas)
+        for offset, delta in enumerate(deltas):
+            closes[start + offset] = closes[start + offset - 1] + delta
     rows = []
     for i in range(count):
-        close = 1.0 + i * step + 0.0003 * __import__("math").sin(i * 0.21)
+        close = closes[i]
         rows.append({
             "ts": i * 60000, "o": close - 0.0001, "h": close + 0.001,
             "l": close - 0.001, "c": close, "vol": 1500 if i == count - 1 else 1000,
@@ -30,6 +38,18 @@ class ScalpingEngineTests(unittest.TestCase):
         self.assertLessEqual(candidate["sl_distance_pct"], 0.80)
         self.assertGreaterEqual(candidate["tp_distance_pct"], candidate["sl_distance_pct"] * 1.5)
         self.assertEqual(candidate["entry_method"], "MARKET")
+
+    def test_paper_manager_preserves_scalp_distance_bounds(self):
+        from signal_manager import _open
+        state = {"total_signals": 0, "open_signal": None, "pending_signal": None}
+        _open({
+            "strategy_type": "SCALPING", "tp_distance_pct": 0.2, "sl_distance_pct": 0.1,
+            "strategy_name": "XRP_SCALPING_1M_5M", "timeframe": "1m",
+        }, 1.0, 123, state)
+        opened = state["open_signal"]
+        self.assertAlmostEqual(opened["tp_distance_pct"], 0.90)
+        self.assertAlmostEqual(opened["sl_distance_pct"], 0.40)
+        self.assertEqual(opened["strategy_type"], "SCALPING")
 
     def test_wide_spread_blocks_scalping(self):
         candidate, diagnostics = evaluate_scalping(
