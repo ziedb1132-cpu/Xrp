@@ -33,7 +33,7 @@ jobs:
           from feature_engine import build_features
           from ai_model import gate_status
           from strategy_engine import evaluate_strategies
-from scalping_engine import evaluate_scalping
+          from scalping_engine import evaluate_scalping
           candles=[]
           for i in range(300):
               p=100+i*0.02
