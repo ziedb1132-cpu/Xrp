@@ -60,6 +60,19 @@ def _scalping_paper_gate(signal_state, required=30):
         "win_rate_pct": round(100 * len(winners) / len(values), 2) if values else None,
     }
 
+def _assert_no_existing_exposure(api):
+    """Fail closed if XRP already has a position or any pending spot/protective order."""
+    pending_orders = api.request(
+        "GET", "/api/v5/trade/orders-pending?" + urlencode({"instType": "SPOT", "instId": INST})
+    )
+    pending_algos = api.pending_algos()
+    balance = api.xrp_balance()
+    if pending_orders or pending_algos or balance["total"] > 0:
+        raise OKXError(
+            "Existing XRP balance or open XRP orders detected; refusing to open a second position."
+        )
+
+
 class OKX:
     def __init__(self):
         self.key = os.getenv("OKX_API_KEY", "")
@@ -383,6 +396,8 @@ def _process_live(signal_state):
     _save(live)
     try:
         api = OKX()
+        # Enforce the one-position rule against the exchange itself, not only local state.
+        _assert_no_existing_exposure(api)
         available = api.available_usdt()
         budget = _quote_budget(available)
         record = live["orders"][-1]
