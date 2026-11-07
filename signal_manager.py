@@ -240,7 +240,11 @@ class SignalManager:
           "open_signal":a,"pending_signal":p,"entry_method_stats":s.get("entry_method_stats",{}),
           "strategy_count":len(s.get("ranked_strategies",[])),"top_strategies":s.get("ranked_strategies",[])[:20],
           "feature_count":1205,"ai_gate":s.get("ai_gate",{}),"last_training":s.get("last_training",{}),
-          "market_context":s.get("market_context",{}),\n          "mutation_lab":s.get("mutation_lab",{}).get("report",{}),\n          "mutation_memory_generation":s.get("mutation_lab",{}).get("memory",{}).get("generation",0),\n          "model_mutation_lab":s.get("model_mutation_lab",{}).get("report",{}),\n          "model_mutation_memory_generation":s.get("model_mutation_lab",{}).get("memory",{}).get("generation",0)}
+          "market_context":s.get("market_context",{}),
+          "mutation_lab":s.get("mutation_lab",{}).get("report",{}),
+          "mutation_memory_generation":s.get("mutation_lab",{}).get("memory",{}).get("generation",0),
+          "model_mutation_lab":s.get("model_mutation_lab",{}).get("report",{}),
+          "model_mutation_memory_generation":s.get("model_mutation_lab",{}).get("memory",{}).get("generation",0)}
         tmp="xrp_summary.json.tmp"
         with open(tmp,"w",encoding="utf-8") as f:json.dump(summary,f,ensure_ascii=False,separators=(",",":"))
         os.replace(tmp,"xrp_summary.json")
