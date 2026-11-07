@@ -149,9 +149,9 @@ def _opportunity(candles, context=None, book=None, recent_stats=None):
     atr_pct = _atr_pct(candles)
     # Volatility-adaptive initial exit distances. Floors avoid fee-dominated exits;
     # caps prevent an unusually volatile candle from creating an oversized risk.
-    tp_pct = min(4.0, max(0.80, atr_pct * 2.0))
-    sl_pct = min(2.0, max(0.45, atr_pct * 1.20))
-    tp_pct = min(4.0, max(tp_pct, sl_pct * 1.50))
+    tp_pct = min(6.0, max(2.0, atr_pct * 2.0))
+    sl_pct = min(3.0, max(1.0, atr_pct * 1.20))
+    tp_pct = min(6.0, max(tp_pct, sl_pct * 1.50))
     net_win = tp_pct - ROUND_TRIP_COST_PCT
     net_loss = sl_pct + ROUND_TRIP_COST_PCT
     expected_net = estimated_win * net_win - (1 - estimated_win) * net_loss
