@@ -82,7 +82,7 @@ def orderbook_context():
             "available": True,
         }
     except Exception as exc:
-        return {"imbalance": 0.0, "spread_pct": 0.0, "available": False, "error": str(exc)[:180]}
+        return {"imbalance": 0.0, "spread_pct": 999.0, "available": False, "liquidity_state": "unavailable", "error": str(exc)[:180]}
 
 
 def _regime(cs, cs15, cs1h, cs4h):
@@ -94,12 +94,15 @@ def _regime(cs, cs15, cs1h, cs4h):
     for series in (cs15, cs1h, cs4h):
         values = [item["c"] for item in series]
         mtf.append(values[-1] / values[-5] - 1 if len(values) >= 5 and values[-5] else 0)
-    regime = "bullish" if trend > 0.002 else ("bearish" if trend < -0.002 else "range")
+    positive_mtf = sum(1 for value in mtf if value > 0.001)
+    negative_mtf = sum(1 for value in mtf if value < -0.001)
+    regime = ("bullish" if trend > 0.002 and positive_mtf >= 2 else
+              "bearish" if trend < -0.002 and negative_mtf >= 2 else "range")
     return {
         "regime": regime,
         "trend": round(trend, 6),
         "volatility": round(volatility, 6),
-        "volatility_state": "high" if volatility > 0.006 else "normal",
+        "volatility_state": "high" if volatility > 0.006 else ("elevated" if volatility > 0.003 else "normal"),
         "trend_15m": round(mtf[0], 6),
         "trend_1h": round(mtf[1], 6),
         "trend_4h": round(mtf[2], 6),
@@ -116,8 +119,10 @@ def analyze(news_sentiment=0.0, entry_method_stats=None, recent_stats=None):
     context = _regime(cs, cs15, cs1h, cs4h)
     context.update({
         "book_imbalance": book.get("imbalance", 0.0),
-        "book_spread_pct": book.get("spread_pct", 0.0),
+        "book_spread_pct": book.get("spread_pct", 999.0),
         "orderbook_available": bool(book.get("available")),
+        "liquidity_state": ("unavailable" if not book.get("available") else
+                            "weak" if float(book.get("spread_pct", 999.0)) > 0.12 else "normal"),
         "candle_counts": {"5m": len(cs), "15m": len(cs15), "1h": len(cs1h), "4h": len(cs4h)},
         "latest_candle_ts": cs[-1]["ts"],
         "data_quality": "ok",
@@ -144,10 +149,10 @@ def analyze(news_sentiment=0.0, entry_method_stats=None, recent_stats=None):
         candidate = {
             "side": "BUY",
             "entry": price,
-            "tp": price * (1 + float(selected.get("tp_distance_pct", 0.80)) / 100.0),
-            "sl": price * (1 - float(selected.get("sl_distance_pct", 0.45)) / 100.0),
-            "tp_distance_pct": float(selected.get("tp_distance_pct", 0.80)),
-            "sl_distance_pct": float(selected.get("sl_distance_pct", 0.45)),
+            "tp": price * (1 + float(selected.get("tp_distance_pct", 2.0)) / 100.0),
+            "sl": price * (1 - float(selected.get("sl_distance_pct", 1.0)) / 100.0),
+            "tp_distance_pct": float(selected.get("tp_distance_pct", 2.0)),
+            "sl_distance_pct": float(selected.get("sl_distance_pct", 1.0)),
             "atr_pct": float(selected.get("atr_pct", 0.0)),
             "exit_distance_source": selected.get("exit_distance_source", "ATR_VOLATILITY_ADAPTIVE"),
             "strategy_name": selected["name"],
