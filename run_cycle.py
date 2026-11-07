@@ -18,7 +18,8 @@ def main():
         "win_rate_pct":(100*sum(1 for x in recent if float(x.get("net_return_pct",0) or 0)>0)/len(recent)) if recent else 50.0,
     }
     price,candidate,features,ranked,context=analyze(
-        sentiment,state.get("entry_method_stats",{}),recent_stats
+        sentiment,state.get("entry_method_stats",{}),recent_stats,
+        state.get("mutation_lab",{}).get("memory",{})
     )
     state["news_items"]=news[:250];state["news_sentiment"]=sentiment;state["news_updated_at"]=int(time.time())
     if context.get("mutation_lab"):
