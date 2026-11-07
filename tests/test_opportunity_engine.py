@@ -51,6 +51,16 @@ class OpportunityEngineTests(unittest.TestCase):
         self.assertFalse(result["eligible"])
         self.assertIn("spread_too_wide", result["reasons"])
 
+    def test_unavailable_orderbook_blocks_entry(self):
+        result = _opportunity(
+            rising_candles(),
+            {"regime": "bullish", "trend_15m": 0.004, "trend_1h": 0.006, "trend_4h": 0.003},
+            {"imbalance": 0.0, "spread_pct": 999.0, "available": False},
+        )
+        self.assertFalse(result["eligible"])
+        self.assertIn("orderbook_unavailable", result["reasons"])
+        self.assertIn("spread_too_wide", result["reasons"])
+
     def test_best_opportunity_does_not_require_legacy_boolean_trigger(self):
         candles = rising_candles()
         with patch("strategy_engine._flags", return_value={}), patch(
