@@ -1,6 +1,6 @@
 import unittest
 
-from ai_model import gate_status, select_entry_method, _chronological_split, GATE_MIN_WINS, GATE_MIN_LOSSES, FEATURE_DIM
+from ai_model import gate_status, select_entry_method, _chronological_split, _overfit_guard, GATE_MIN_WINS, GATE_MIN_LOSSES, FEATURE_DIM
 from feature_engine import FEATURE_VERSION
 
 
@@ -53,6 +53,27 @@ class BalancedAIGateTests(unittest.TestCase):
         self.assertIsNotNone(split)
         self.assertGreaterEqual(details["validation_wins"], 3)
         self.assertGreaterEqual(details["validation_losses"], 3)
+
+    def test_overfit_guard_rejects_large_generalization_gap(self):
+        result = _overfit_guard(0.20, 0.60, 0.24, 0.75)
+        self.assertFalse(result["passed"])
+        self.assertFalse(result["checks"]["generalization_gap_ok"])
+
+    def test_overfit_guard_rejects_weak_holdout_metrics(self):
+        result = _overfit_guard(0.55, 0.75, 0.28, 0.40)
+        self.assertFalse(result["passed"])
+        self.assertFalse(result["checks"]["validation_loss_ok"])
+        self.assertFalse(result["checks"]["validation_brier_ok"])
+        self.assertFalse(result["checks"]["balanced_accuracy_ok"])
+
+    def test_overfit_guard_accepts_consistent_out_of_sample_metrics(self):
+        result = _overfit_guard(0.55, 0.60, 0.22, 0.60)
+        self.assertTrue(result["passed"])
+
+    def test_overfit_guard_fails_closed_on_non_finite_metrics(self):
+        result = _overfit_guard(0.5, float("nan"), 0.2, 0.6)
+        self.assertFalse(result["passed"])
+        self.assertEqual(result["reason"], "non_finite_validation_metric")
 
     def test_incompatible_feature_snapshots_do_not_count(self):
         history = [self._signal(True, i) for i in range(30)]
