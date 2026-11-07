@@ -247,7 +247,7 @@ def _backtest(candles, name):
         "trades": len(trades), "wins": len(wins), "losses": len(losses),
         "tp_exits": sum(1 for x in trades if x["reason"] == "TP"),
         "sl_exits": sum(1 for x in trades if x["reason"] == "SL"),
-        "time_exits": sum(1 for x in trades if x["reason"] == "TIME_OUT"),
+        "unresolved_at_end": unresolved,
         "win_rate_pct": round(100 * len(wins) / len(trades), 2) if trades else None,
         "profit_factor": round(pf, 3),
         "expectancy_pct": round(sum(net_values) / len(net_values), 4) if net_values else None,
