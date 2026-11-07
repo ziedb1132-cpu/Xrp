@@ -117,6 +117,51 @@ class XRPExecutionSafetyTests(unittest.TestCase):
 
 
 
+class XRPSinglePositionExchangeGuardTests(unittest.TestCase):
+    def test_empty_exchange_exposure_allows_a_new_position(self):
+        from decimal import Decimal
+        from unittest.mock import Mock
+        from okx_live import _assert_no_existing_exposure
+        api = Mock()
+        api.request.return_value = []
+        api.pending_algos.return_value = []
+        api.xrp_balance.return_value = {"available": Decimal("0"), "total": Decimal("0")}
+        _assert_no_existing_exposure(api)
+
+    def test_existing_spot_order_blocks_a_second_position(self):
+        from decimal import Decimal
+        from unittest.mock import Mock
+        from okx_live import _assert_no_existing_exposure
+        api = Mock()
+        api.request.return_value = [{"ordId": "manual-order"}]
+        api.pending_algos.return_value = []
+        api.xrp_balance.return_value = {"available": Decimal("0"), "total": Decimal("0")}
+        with self.assertRaisesRegex(OKXError, "refusing to open a second position"):
+            _assert_no_existing_exposure(api)
+
+    def test_existing_protective_algo_blocks_a_second_position(self):
+        from decimal import Decimal
+        from unittest.mock import Mock
+        from okx_live import _assert_no_existing_exposure
+        api = Mock()
+        api.request.return_value = []
+        api.pending_algos.return_value = [{"algoId": "active-oco"}]
+        api.xrp_balance.return_value = {"available": Decimal("0"), "total": Decimal("0")}
+        with self.assertRaisesRegex(OKXError, "refusing to open a second position"):
+            _assert_no_existing_exposure(api)
+
+    def test_existing_xrp_balance_blocks_a_second_position(self):
+        from decimal import Decimal
+        from unittest.mock import Mock
+        from okx_live import _assert_no_existing_exposure
+        api = Mock()
+        api.request.return_value = []
+        api.pending_algos.return_value = []
+        api.xrp_balance.return_value = {"available": Decimal("2"), "total": Decimal("2")}
+        with self.assertRaisesRegex(OKXError, "refusing to open a second position"):
+            _assert_no_existing_exposure(api)
+
+
 class XRPAutomaticResumeTests(unittest.TestCase):
     def _saved_state(self, path, reason="No available USDT balance."):
         state = {
