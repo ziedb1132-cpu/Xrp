@@ -7,6 +7,7 @@ from feature_engine import build_features
 from strategy_engine import select_strategy
 from ai_model import select_entry_method
 from scalping_engine import evaluate_scalping
+from mutation_engine import evolve_population
 
 BASE = "https://www.okx.com/api/v5"
 
@@ -111,7 +112,7 @@ def _regime(cs, cs15, cs1h, cs4h):
     }
 
 
-def analyze(news_sentiment=0.0, entry_method_stats=None, recent_stats=None):
+def analyze(news_sentiment=0.0, entry_method_stats=None, recent_stats=None, mutation_memory=None):
     cs = candles("5m", 300)
     cs1 = candles("1m", 300)
     cs15 = candles("15m", 120)
@@ -120,6 +121,8 @@ def analyze(news_sentiment=0.0, entry_method_stats=None, recent_stats=None):
     price = current_price()
     book = orderbook_context()
     context = _regime(cs, cs15, cs1h, cs4h)
+    mutation_result = evolve_population(cs, mutation_memory)
+    context["mutation_lab"] = mutation_result
     context.update({
         "book_imbalance": book.get("imbalance", 0.0),
         "book_spread_pct": book.get("spread_pct", 999.0),
