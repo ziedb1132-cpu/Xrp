@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import patch
 
-from strategy_engine import _opportunity, select_strategy
+from strategy_engine import _backtest, _opportunity, select_strategy
 
 
 def rising_candles(count=300):
@@ -60,6 +60,16 @@ class OpportunityEngineTests(unittest.TestCase):
         self.assertFalse(result["eligible"])
         self.assertIn("orderbook_unavailable", result["reasons"])
         self.assertIn("spread_too_wide", result["reasons"])
+
+    def test_backtest_keeps_unhit_trade_open_instead_of_inventing_timeout(self):
+        candles = [{
+            "ts": i, "o": 100.0, "h": 100.2, "l": 99.8, "c": 100.0, "vol": 1000.0
+        } for i in range(80)]
+        with patch("strategy_engine._flags", return_value={"TEST": True}):
+            result = _backtest(candles, "TEST")
+        self.assertEqual(result["trades"], 0)
+        self.assertEqual(result["unresolved_at_end"], 1)
+        self.assertNotIn("time_exits", result)
 
     def test_best_opportunity_does_not_require_legacy_boolean_trigger(self):
         candles = rising_candles()
