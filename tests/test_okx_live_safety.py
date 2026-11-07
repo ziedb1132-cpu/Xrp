@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from okx_live import OKX, OKXError, process_live, _quote_budget
+from okx_live import OKX, OKXError, process_live, _quote_budget, _scalping_paper_gate
 
 
 class FakeOKX(OKX):
@@ -193,6 +193,31 @@ class XRPAutomaticResumeTests(unittest.TestCase):
             self.assertEqual(result["status"], "halted")
             api_class.assert_not_called()
 
+
+
+class XRPScalpingLiveGateTests(unittest.TestCase):
+    def test_scalping_live_requires_thirty_profitable_paper_closes(self):
+        history = (
+            [{"strategy_type": "SCALPING", "status": "TP", "net_return_pct": 1.0} for _ in range(20)]
+            + [{"strategy_type": "SCALPING", "status": "SL", "net_return_pct": -0.5} for _ in range(10)]
+        )
+        gate = _scalping_paper_gate({"history": history})
+        self.assertTrue(gate["eligible"])
+        self.assertEqual(gate["closed_scalps"], 30)
+        self.assertGreater(gate["profit_factor"], 1.05)
+        self.assertGreater(gate["net_profit_pct"], 0)
+
+    def test_scalping_live_stays_blocked_with_insufficient_or_unprofitable_history(self):
+        short_history = [
+            {"strategy_type": "SCALPING", "status": "TP", "net_return_pct": 1.0}
+            for _ in range(29)
+        ]
+        self.assertFalse(_scalping_paper_gate({"history": short_history})["eligible"])
+        losing_history = (
+            [{"strategy_type": "SCALPING", "status": "TP", "net_return_pct": 0.2} for _ in range(10)]
+            + [{"strategy_type": "SCALPING", "status": "SL", "net_return_pct": -0.5} for _ in range(20)]
+        )
+        self.assertFalse(_scalping_paper_gate({"history": losing_history})["eligible"])
 
 if __name__ == "__main__":
     unittest.main()
