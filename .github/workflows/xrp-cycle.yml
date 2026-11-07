@@ -28,7 +28,7 @@ jobs:
         run: python state_storage.py restore
       - name: Validate code and feature schema
         run: |
-          python -m compileall -q ai_model.py feature_engine.py news_engine.py run_cycle.py signal_manager.py xrp_engine.py state_storage.py strategy_engine.py okx_live.py scalping_engine.py mutation_engine.py
+          python -m compileall -q ai_model.py feature_engine.py news_engine.py run_cycle.py signal_manager.py xrp_engine.py state_storage.py strategy_engine.py okx_live.py scalping_engine.py mutation_engine.py model_mutation_engine.py
           python - <<'PY'
           from feature_engine import build_features
           from ai_model import gate_status
