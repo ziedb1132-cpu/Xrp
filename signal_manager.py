@@ -60,16 +60,22 @@ def _close(a,status,price,now,s):
 def _open(p,price,now,s):
     s["total_signals"]+=1
     entry=float(price)
-    # Enforce the requested risk envelope at the actual paper fill.
-    tp_distance=min(6.0,max(2.0,float(p.get("tp_distance_pct",2.0) or 2.0)))
-    sl_distance=min(3.0,max(1.0,float(p.get("sl_distance_pct",1.0) or 1.0)))
-    tp_distance=min(6.0,max(tp_distance,sl_distance*1.50))
+    # Scalping has its own small, fee-aware envelope; legacy signals keep their original bounds.
+    is_scalp = p.get("strategy_type") == "SCALPING"
+    if is_scalp:
+        tp_distance=min(1.50,max(0.90,float(p.get("tp_distance_pct",0.90) or 0.90)))
+        sl_distance=min(0.80,max(0.40,float(p.get("sl_distance_pct",0.40) or 0.40)))
+        tp_distance=min(1.50,max(tp_distance,sl_distance*1.50))
+    else:
+        tp_distance=min(6.0,max(2.0,float(p.get("tp_distance_pct",2.0) or 2.0)))
+        sl_distance=min(3.0,max(1.0,float(p.get("sl_distance_pct",1.0) or 1.0)))
+        tp_distance=min(6.0,max(tp_distance,sl_distance*1.50))
     tp=entry*(1+tp_distance/100.0);sl=entry*(1-sl_distance/100.0)
     a={"id":s["total_signals"],"symbol":"XRP-USDT","side":"BUY","entry":entry,"tp":tp,"sl":sl,
        "original_tp":tp,"original_sl":sl,"tp_old":None,"tp_new":tp,"sl_old":None,"sl_new":sl,
        "high_water":entry,"low_water":entry,"opened_at":now,"status":"OPEN",
        "features":p.get("features",{}),"feature_version":p.get("feature_version","xrp-1200-v2"),
-       "strategy_name":p.get("strategy_name","BASELINE_MOMENTUM"),
+       "strategy_type":p.get("strategy_type","STANDARD"),"strategy_name":p.get("strategy_name","BASELINE_MOMENTUM"),
        "strategy_description":p.get("strategy_description","AI-selected entry setup"),
        "strategy_score":float(p.get("strategy_score",50)),"opportunity_score":p.get("opportunity_score"),
        "expected_net_edge_pct":p.get("expected_net_edge_pct"),"selection_source":p.get("selection_source"),
@@ -82,7 +88,7 @@ def _open(p,price,now,s):
        "entry_trigger_price":p.get("entry_trigger_price"),"entry_reason":p.get("entry_reason","AI entry confirmation"),
        "timeframe":p.get("timeframe","5m"),"market_regime":p.get("market_regime","unknown"),
        "opened_price":price,"trailing_version":2,"trailing_updates":0,"trailing_active":False,
-       "trailing_activation_pct":30.0,"trailing_stop_gap_pct":0.70,
+       "trailing_activation_pct":float(p.get("trailing_activation_pct",50.0 if is_scalp else 30.0)),"trailing_stop_gap_pct":float(p.get("trailing_stop_gap_pct",0.25 if is_scalp else 0.70)),\n       "scalping_diagnostics":p.get("scalping_diagnostics",{}),
        "break_even_price":round(entry*(1+(BUY_FEE_PCT+SELL_FEE_PCT+SLIPPAGE_PCT)/100.0),10)}
     s["open_signal"]=a;s["pending_signal"]=None
 
@@ -164,13 +170,13 @@ class SignalManager:
         write(s);self.write_summary(s)
     def write_summary(self,s):
         source=s.get("open_signal")
-        allowed=("id","signal_id","symbol","side","entry","tp","sl","original_tp","original_sl","tp_old","tp_new","sl_old","sl_new","high_water","low_water","opened_at","status","strategy_name","strategy_description","strategy_score","opportunity_score","expected_net_edge_pct","selection_source","ai_win_probability","exit_policy_source","exit_policy_samples","predicted_mfe_pct","predicted_mae_pct","tp_distance_pct","sl_distance_pct","entry_method","entry_method_scores","entry_policy_source","entry_trigger_price","entry_reason","timeframe","market_regime","opened_price","trailing_version","trailing_updates","trailing_active","trailing_activation_pct","trailing_activation_price","trailing_stop_gap_pct","break_even_price","risk_history","sl_updated_at","change_reason")
+        allowed=("id","signal_id","symbol","side","entry","tp","sl","original_tp","original_sl","tp_old","tp_new","sl_old","sl_new","high_water","low_water","opened_at","status","strategy_type","strategy_name","strategy_description","strategy_score","opportunity_score","expected_net_edge_pct","selection_source","ai_win_probability","exit_policy_source","exit_policy_samples","predicted_mfe_pct","predicted_mae_pct","tp_distance_pct","sl_distance_pct","entry_method","entry_method_scores","entry_policy_source","entry_trigger_price","entry_reason","timeframe","market_regime","opened_price","trailing_version","trailing_updates","trailing_active","trailing_activation_pct","trailing_activation_price","trailing_stop_gap_pct","break_even_price","risk_history","sl_updated_at","change_reason","scalping_diagnostics")
         a={key:source[key] for key in allowed if key in source} if isinstance(source,dict) else None
         if a and isinstance(a.get("risk_history"),list):a["risk_history"]=a["risk_history"][-20:]
         pending=s.get("pending_signal")
         p=None
         if isinstance(pending,dict):
-            p={key:pending[key] for key in ("entry_method","entry_policy_source","entry_trigger_price","entry_retest_price","entry_support_price","entry_stage","pending_since","strategy_name","strategy_score","opportunity_score","expected_net_edge_pct","selection_source","entry_reason") if key in pending}
+            p={key:pending[key] for key in ("entry_method","entry_policy_source","entry_trigger_price","entry_retest_price","entry_support_price","entry_stage","pending_since","strategy_type","strategy_name","strategy_score","opportunity_score","expected_net_edge_pct","selection_source","entry_reason") if key in pending}
         closed=[x for x in s.get("history",[]) if x.get("status") in ("TP","SL")]
         net_values=[float(x.get("net_return_pct",0) or 0) for x in closed]
         gross_values=[float(x.get("gross_return_pct",0) or 0) for x in closed]
@@ -206,7 +212,7 @@ class SignalManager:
                          "min_reward_risk_ratio":1.5,"applies_to":"new_signals_only"},
           "ai_performance":_performance_group(ai_closed),
           "pre_ai_performance":_performance_group(pre_ai_closed),
-          "ai_exit_performance":_performance_group(ai_exit_closed),
+          "ai_exit_performance":_performance_group(ai_exit_closed),\n          "scalping_performance":_performance_group(scalp_closed),\n          "scalping_closed_signals":len(scalp_closed),
           "gross_profit_pct":round(sum(gross_values),5),
           "buy_fees_pct":round(sum(float(x.get("buy_fee_pct",FEE_PCT) or 0) for x in closed),5),
           "sell_fees_pct":round(sum(float(x.get("sell_fee_pct",FEE_PCT) or 0) for x in closed),5),
