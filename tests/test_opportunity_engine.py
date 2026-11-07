@@ -35,10 +35,10 @@ class OpportunityEngineTests(unittest.TestCase):
             {"regime": "bullish", "trend_15m": 0.004, "trend_1h": 0.006, "trend_4h": 0.003},
             {"imbalance": 0.20, "spread_pct": 0.02},
         )
-        self.assertGreaterEqual(result["tp_distance_pct"], 0.80)
-        self.assertGreaterEqual(result["sl_distance_pct"], 0.45)
-        self.assertLessEqual(result["tp_distance_pct"], 4.0)
-        self.assertLessEqual(result["sl_distance_pct"], 2.0)
+        self.assertGreaterEqual(result["tp_distance_pct"], 2.0)
+        self.assertGreaterEqual(result["sl_distance_pct"], 1.0)
+        self.assertLessEqual(result["tp_distance_pct"], 6.0)
+        self.assertLessEqual(result["sl_distance_pct"], 3.0)
         self.assertGreaterEqual(result["tp_distance_pct"], result["sl_distance_pct"] * 1.5)
         self.assertEqual(result["exit_distance_source"], "ATR_VOLATILITY_ADAPTIVE")
 
