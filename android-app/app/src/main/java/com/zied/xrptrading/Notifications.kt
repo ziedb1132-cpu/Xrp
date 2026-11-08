@@ -22,7 +22,6 @@ object LocalEvents {
         }
     }
     fun consume(context:Context,events:List<EventInfo>) {
-        if(events.isEmpty())return
         ensureChannel(context)
         val prefs=context.getSharedPreferences(PREFS,Context.MODE_PRIVATE)
         val seen=prefs.getStringSet("seen_ids",emptySet())?.toMutableSet()?:mutableSetOf()
@@ -31,6 +30,7 @@ object LocalEvents {
             prefs.edit().putStringSet("seen_ids",seen).putBoolean("initialized",true).apply()
             return
         }
+        if(events.isEmpty())return
         val canNotify=Build.VERSION.SDK_INT<33 || ContextCompat.checkSelfPermission(context,Manifest.permission.POST_NOTIFICATIONS)==PackageManager.PERMISSION_GRANTED
         val fresh=events.filter{it.id !in seen}.sortedBy{it.at}
         fresh.forEach{event->
