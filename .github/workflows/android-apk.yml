@@ -1,4 +1,4 @@
-name: Build XRP Android APK
+name: Build XRP Native Android APK
 on:
   workflow_dispatch:
   push:
@@ -13,49 +13,22 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '21'
+          java-version: '17'
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.11.1'
-      - name: Install dependencies
+      - name: Build native Android APK
         working-directory: android-app
-        run: npm install
-      - name: Prepare web assets
-        working-directory: android-app
-        run: |
-          mkdir -p www
-          cp app/index.html www/index.html
-      - name: Add Android platform
-        working-directory: android-app
-        run: npx cap add android
-      - name: Sync Android
-        working-directory: android-app
-        run: npx cap sync android
-      - name: Build debug APK
-        working-directory: android-app
-        run: |
-          cd android
-          chmod +x gradlew
-          sed -i 's/gradle-8\.11\.1-all\.zip/gradle-8.11.1-bin.zip/' gradle/wrapper/gradle-wrapper.properties
-          if grep -q '^networkTimeout=' gradle/wrapper/gradle-wrapper.properties; then
-            sed -i 's/^networkTimeout=.*/networkTimeout=180000/' gradle/wrapper/gradle-wrapper.properties
-          else
-            echo 'networkTimeout=180000' >> gradle/wrapper/gradle-wrapper.properties
-          fi
-          gradle --no-daemon assembleDebug
+        run: gradle --no-daemon assembleDebug
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: XRP-AI-Trading-APK
-          path: android-app/android/app/build/outputs/apk/debug/app-debug.apk
+          name: XRP-AI-Trading-Native-APK
+          path: android-app/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 30
