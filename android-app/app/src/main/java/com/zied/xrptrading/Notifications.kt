@@ -31,16 +31,17 @@ object LocalEvents {
             prefs.edit().putStringSet("seen_ids",seen).putBoolean("initialized",true).apply()
             return
         }
+        val canNotify=Build.VERSION.SDK_INT<33 || ContextCompat.checkSelfPermission(context,Manifest.permission.POST_NOTIFICATIONS)==PackageManager.PERMISSION_GRANTED
         val fresh=events.filter{it.id !in seen}.sortedBy{it.at}
         fresh.forEach{event->
-            if(Build.VERSION.SDK_INT<33 || ContextCompat.checkSelfPermission(context,Manifest.permission.POST_NOTIFICATIONS)==PackageManager.PERMISSION_GRANTED) {
+            if(canNotify) {
                 val n=NotificationCompat.Builder(context,CHANNEL).setSmallIcon(android.R.drawable.ic_dialog_info)
                     .setContentTitle("XRP AI · ${event.title}").setContentText(event.message)
                     .setStyle(NotificationCompat.BigTextStyle().bigText(event.message)).setAutoCancel(true)
                     .setPriority(NotificationCompat.PRIORITY_DEFAULT).build()
                 NotificationManagerCompat.from(context).notify(event.id.hashCode(),n)
             }
-            seen.add(event.id)
+            if(canNotify) seen.add(event.id)
         }
         if(seen.size>300) seen.retainAll(events.map{it.id}.toSet())
         prefs.edit().putStringSet("seen_ids",seen).apply()
