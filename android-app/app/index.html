@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#f7f9fc"><title>XRP AI Trading</title>
+<style>
+:root{color-scheme:light;--bg:#f5f7fb;--card:#fff;--ink:#172033;--muted:#718096;--line:#e7ebf2;--green:#0b9b72;--red:#dc4c64;--blue:#4169e1}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,"Segoe UI",sans-serif}
+header{padding:22px 18px 16px;background:#fff;border-bottom:1px solid var(--line);position:sticky;top:0;z-index:5}
+.brand{display:flex;align-items:center;gap:12px}.logo{width:44px;height:44px;border-radius:14px;background:#111827;color:#fff;display:grid;place-items:center;font-weight:800;font-size:18px}.brand h1{font-size:18px;margin:0}.brand p{font-size:12px;color:var(--muted);margin:3px 0 0}
+main{padding:16px;max-width:760px;margin:auto}.price-card{background:#111827;color:white;border-radius:22px;padding:20px;margin-bottom:14px}.eyebrow{font-size:12px;color:#c4cede}.price{font-size:34px;font-weight:750;margin:6px 0}.sub{font-size:12px;color:#c4cede}
+.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-bottom:14px}.card{background:var(--card);border:1px solid var(--line);border-radius:17px;padding:15px;min-width:0}.label{font-size:12px;color:var(--muted)}.value{font-size:21px;font-weight:720;margin-top:7px;overflow-wrap:anywhere}.small{font-size:12px;color:var(--muted);margin-top:5px}
+.section{font-size:15px;font-weight:750;margin:20px 2px 10px}.signal{background:#fff;border:1px solid var(--line);border-radius:18px;padding:16px;margin-bottom:10px}.signal-head{display:flex;justify-content:space-between;gap:8px;align-items:center}.pill{font-size:11px;padding:5px 9px;border-radius:30px;background:#edf2ff;color:#3556ba}.pill.green{background:#e8f8f1;color:#087a58}.pill.red{background:#fff0f2;color:#c13c53}.details{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:14px}.details div{background:#f7f9fc;padding:9px;border-radius:10px}.details b{display:block;font-size:13px;margin-top:4px}.details span{font-size:10px;color:var(--muted)}
+.rowline{display:flex;justify-content:space-between;gap:12px;padding:10px 0;border-bottom:1px solid var(--line);font-size:13px}.rowline:last-child{border:0}.positive{color:var(--green)}.negative{color:var(--red)}
+button{border:0;background:#eaf0ff;color:#3157c7;border-radius:12px;padding:10px 14px;font-weight:650}footer{text-align:center;color:var(--muted);font-size:11px;padding:18px}
+#status{font-size:12px;color:var(--muted);margin-top:10px}.error{color:var(--red)}.empty{color:var(--muted);font-size:13px;padding:8px 0}
+@media(min-width:600px){.grid{grid-template-columns:repeat(4,minmax(0,1fr))}}
+</style></head>
+<body>
+<header><div class="brand"><div class="logo">XRP</div><div><h1>XRP AI Trading</h1><p>لوحة مراقبة التداول والذكاء الاصطناعي</p></div></div></header>
+<main>
+<section class="price-card"><div class="eyebrow">سعر XRP-USDT الحالي</div><div class="price" id="price">—</div><div class="sub" id="updated">في انتظار البيانات…</div></section>
+<div class="grid">
+<div class="card"><div class="label">الإشارات المغلقة</div><div class="value" id="closed">—</div></div>
+<div class="card"><div class="label">نسبة النجاح</div><div class="value" id="winrate">—</div></div>
+<div class="card"><div class="label">صافي العائد</div><div class="value" id="net">—</div></div>
+<div class="card"><div class="label">Profit Factor</div><div class="value" id="pf">—</div></div>
+</div>
+<div class="section">حالة الصفقة الحالية</div><div id="active"></div>
+<div class="section">حالة الذكاء الاصطناعي</div><div class="card" id="ai"></div>
+<div class="section">الطفرات والأجيال</div><div class="card" id="mutation"></div>
+<div class="section">مؤشرات الأداء</div><div class="card" id="performance"></div>
+<div class="section">أفضل الاستراتيجيات</div><div class="card" id="strategies"></div>
+<div style="display:flex;justify-content:space-between;align-items:center;margin-top:18px"><span id="status">جارٍ الاتصال…</span><button id="refresh">تحديث الآن</button></div>
+</main><footer>قراءة فقط · لا يتم إرسال أوامر تداول من هذا التطبيق</footer>
+<script>
+const DATA_URL='https://raw.githubusercontent.com/ziedb1132-cpu/Xrp/main/xrp_summary.json';
+const $=id=>document.getElementById(id);
+const num=(v,d=2)=>v==null||!Number.isFinite(Number(v))?'—':Number(v).toFixed(d);
+const pct=v=>v==null?'—':num(v)+'%';
+const setVal=(id,v)=>$(id).textContent=v;
+const esc=s=>String(s??'—').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+function signalCard(s,pending=false){
+ if(!s)return '<div class="card empty">لا توجد إشارة '+(pending?'معلقة':'مفتوحة')+' حالياً</div>';
+ const status=pending?'معلقة':'مفتوحة';
+ return '<div class="signal"><div class="signal-head"><b>'+esc(s.symbol||'XRP-USDT')+' · '+esc(s.side||'BUY')+'</b><span class="pill '+(pending?'':'green')+'">'+status+'</span></div>'+
+ '<div class="details"><div><span>الدخول</span><b>'+num(s.entry,5)+'</b></div><div><span>Take Profit</span><b>'+num(s.tp,5)+'</b></div><div><span>Stop Loss</span><b>'+num(s.sl,5)+'</b></div></div>'+
+ '<div class="rowline"><span>الاستراتيجية</span><b>'+esc(s.strategy_name||s.strategy_type)+'</b></div>'+
+ '<div class="rowline"><span>طريقة الدخول</span><b>'+esc(s.entry_method)+'</b></div>'+
+ '<div class="rowline"><span>الإطار الزمني</span><b>'+esc(s.timeframe||'—')+'</b></div>'+
+ (s.trailing_active!=null?'<div class="rowline"><span>Trailing</span><b>'+(s.trailing_active?'نشط':'غير نشط')+'</b></div>':'')+'</div>';
+}
+function render(d){
+ setVal('price',num(d.current_price??d.price,5)+' USDT');setVal('closed',num(d.closed_signals,0));setVal('winrate',pct(d.win_rate_pct));setVal('net',pct(d.net_profit_pct));setVal('pf',num(d.profit_factor,3));
+ $('net').className='value '+(Number(d.net_profit_pct)>=0?'positive':'negative');
+ const date=d.updated_at?new Date(d.updated_at*1000).toLocaleString('ar-TN',{timeZone:'Africa/Tunis',hour:'2-digit',minute:'2-digit',day:'2-digit',month:'2-digit'}):'—';
+ setVal('updated','الدورة '+(d.cycle??'—')+' · آخر تحديث '+date);
+ $('active').innerHTML=signalCard(d.open_signal,false)+(d.pending_signal?signalCard(d.pending_signal,true):'');
+ const g=d.ai_gate||{};
+ $('ai').innerHTML='<div class="rowline"><span>حالة النموذج</span><b class="'+(g.enabled?'positive':'')+'">'+(g.enabled?'مفعّل':'في مرحلة التعلم')+'</b></div>'+
+ '<div class="rowline"><span>الانتصارات المتوافقة</span><b>'+num(g.wins,0)+' / '+num(g.required_wins,0)+'</b></div>'+
+ '<div class="rowline"><span>الخسائر المتوافقة</span><b>'+num(g.losses,0)+' / '+num(g.required_losses,0)+'</b></div>'+
+ '<div class="rowline"><span>الإشارات المتوافقة</span><b>'+num(g.compatible_signals,0)+' / '+num(g.required_closed,0)+'</b></div>'+
+ '<div class="rowline"><span>سبب الحالة</span><b>'+esc(g.gate_reason||'—')+'</b></div>';
+ const m=d.mutation_lab||{},mm=d.model_mutation_lab||{};
+ $('mutation').innerHTML='<div class="rowline"><span>جيل الاستراتيجيات</span><b>'+num(m.generation,0)+'</b></div><div class="rowline"><span>أفضل عائلة</span><b>'+esc(m.best_family)+'</b></div><div class="rowline"><span>اجتاز التحقق</span><b>'+(m.validation_passed?'نعم':'لا')+'</b></div><div class="rowline"><span>جيل طفرات النموذج</span><b>'+num(mm.generation,0)+'</b></div><div class="rowline"><span>حالة الطفرات</span><b>'+esc(m.status||'—')+'</b></div>';
+ $('performance').innerHTML=[['متوسط الربح',pct(d.avg_win_pct)],['متوسط الخسارة',pct(d.avg_loss_pct)],['Expectancy',pct(d.expectancy_pct)],['أقصى تراجع',pct(d.max_drawdown_pct)],['صفقات TP',num(d.tp_count,0)],['صفقات SL',num(d.sl_count,0)],['نتائج Trailing',num(d.trailing_closed_signals,0)],['رسوم المحاكاة',pct(d.total_fees_pct)]].map(x=>'<div class="rowline"><span>'+x[0]+'</span><b>'+x[1]+'</b></div>').join('');
+ $('strategies').innerHTML=(d.top_strategies||[]).slice(0,8).map(s=>'<div class="rowline"><span>'+esc(s.name)+'</span><b>'+num(s.opportunity_score??s.score,1)+'</b></div>').join('')||'<div class="empty">لا توجد بيانات حالياً</div>';
+}
+async function refresh(){
+ $('status').textContent='جارٍ تحديث البيانات…';$('status').className='';
+ try{const u=DATA_URL+'?t='+Date.now();const r=await fetch(u,{cache:'no-store'});if(!r.ok)throw Error('HTTP '+r.status);const d=await r.json();render(d);setVal('status','متصل · تحديث تلقائي كل دقيقة');}
+ catch(e){$('status').textContent='تعذر جلب البيانات. تحقق من الإنترنت ثم أعد المحاولة.';$('status').className='error';}
+}
+$('refresh').addEventListener('click',refresh);refresh();setInterval(refresh,60000);
+</script></body></html>
