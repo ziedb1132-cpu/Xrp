@@ -41,7 +41,13 @@ jobs:
         run: |
           cd android
           chmod +x gradlew
-          ./gradlew assembleDebug
+          sed -i 's/^distributionUrl=/networkTimeout=120000\\ndistributionUrl=/' gradle/wrapper/gradle-wrapper.properties
+          for attempt in 1 2 3; do
+            ./gradlew --no-daemon assembleDebug && break
+            if [ "$attempt" -eq 3 ]; then exit 1; fi
+            echo "Gradle download/build retry $attempt"
+            sleep 10
+          done
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
