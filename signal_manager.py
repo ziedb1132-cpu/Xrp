@@ -17,13 +17,33 @@ def read():
     s.setdefault("tp_count",sum(1 for x in s["history"] if x.get("status")=="TP"))
     s.setdefault("sl_count",sum(1 for x in s["history"] if x.get("status")=="SL"))
     s.setdefault("open_signal",None);s.setdefault("pending_signal",None)
-    s.setdefault("strategy_stats",{});s.setdefault("entry_method_stats",{})
+    s.setdefault("strategy_stats",{});s.setdefault("entry_method_stats",{});s.setdefault("event_history",[]);s.setdefault("event_seq",0)
     return s
 
 def write(s):
     tmp=STATE+".tmp"
     with open(tmp,"w",encoding="utf-8") as f:json.dump(s,f,ensure_ascii=False,separators=(",",":"))
     os.replace(tmp,STATE)
+
+def _add_event(s,event_type,a,now,price=None,sl_old=None,sl_new=None,reason=None):
+    """Append a compact, persistent event for the native Android monitor."""
+    seq=int(s.get("event_seq",0) or 0)+1
+    s["event_seq"]=seq
+    event={"event_id":str(seq),"type":event_type,"signal_id":a.get("id"),
+           "symbol":a.get("symbol","XRP-USDT"),"side":a.get("side","BUY"),
+           "at":int(now),"cycle":int(s.get("cycle",0)),
+           "strategy_name":a.get("strategy_name","—")}
+    if price is not None:event["price"]=float(price)
+    if sl_old is not None:event["sl_old"]=float(sl_old)
+    if sl_new is not None:event["sl_new"]=float(sl_new)
+    if reason:event["reason"]=str(reason)
+    if event_type=="SIGNAL_CLOSED":
+        event["status"]=a.get("status")
+        event["exit_price"]=float(a.get("exit_price",price or 0))
+        event["net_return_pct"]=float(a.get("net_return_pct",0) or 0)
+    rows=s.setdefault("event_history",[])
+    rows.append(event)
+    s["event_history"]=rows[-200:]
 
 def _record_entry_result(a,s,net):
     method=a.get("entry_method","MARKET")
@@ -50,6 +70,7 @@ def _close(a,status,price,now,s):
              accounting_model="PAPER_ESTIMATE",close_reason=status,
              mfe_pct=round(mfe,5),mae_pct=round(mae,5))
     s["history"].append(a)
+    _add_event(s,"SIGNAL_CLOSED",a,now,price=price,reason=status)
     if status=="TP":s["tp_count"]+=1
     else:s["sl_count"]+=1
     stats=s.setdefault("strategy_stats",{}).setdefault(a.get("strategy_name","BASELINE"),{"trades":0,"wins":0,"losses":0,"net_return_pct":0.0})
@@ -92,6 +113,7 @@ def _open(p,price,now,s):
        "scalping_diagnostics":p.get("scalping_diagnostics",{}),
        "break_even_price":round(entry*(1+(BUY_FEE_PCT+SELL_FEE_PCT+SLIPPAGE_PCT)/100.0),10)}
     s["open_signal"]=a;s["pending_signal"]=None
+    _add_event(s,"SIGNAL_OPENED",a,now,price=entry)
 
 def _pending_trigger(p,price):
     method=p.get("entry_method","MARKET")
@@ -134,6 +156,7 @@ class SignalManager:
                         log.append({"at":now,"price":price,"sl_old":old,"sl_new":proposed,"reason":"legacy_trailing_stop_tightened"})
                         a.update(sl_old=old,sl=proposed,sl_new=proposed,sl_updated_at=now,
                                  change_reason="legacy_trailing_stop_tightened",trailing_updates=int(a.get("trailing_updates",0))+1)
+                        _add_event(s,"SL_MOVED",a,now,price=price,sl_old=old,sl_new=proposed,reason="legacy_trailing_stop_tightened")
             else:
                 entry=float(a.get("entry",price))
                 is_scalp = a.get("strategy_type") == "SCALPING"
@@ -155,6 +178,7 @@ class SignalManager:
                         a.update(sl_old=old,sl=proposed,sl_new=proposed,sl_updated_at=now,
                                  change_reason=reason,trailing_updates=int(a.get("trailing_updates",0))+1,
                                  trailing_active=True,trailing_activation_price=round(activation_price,10))
+                        _add_event(s,"SL_MOVED",a,now,price=price,sl_old=old,sl_new=proposed,reason=reason)
         if not s.get("open_signal"):
             pending=s.get("pending_signal")
             if pending:
@@ -244,7 +268,8 @@ class SignalManager:
           "mutation_lab":s.get("mutation_lab",{}).get("report",{}),
           "mutation_memory_generation":s.get("mutation_lab",{}).get("memory",{}).get("generation",0),
           "model_mutation_lab":s.get("model_mutation_lab",{}).get("report",{}),
-          "model_mutation_memory_generation":s.get("model_mutation_lab",{}).get("memory",{}).get("generation",0)}
+          "model_mutation_memory_generation":s.get("model_mutation_lab",{}).get("memory",{}).get("generation",0),
+          "recent_events":s.get("event_history",[])[-100:]}
         tmp="xrp_summary.json.tmp"
         with open(tmp,"w",encoding="utf-8") as f:json.dump(summary,f,ensure_ascii=False,separators=(",",":"))
         os.replace(tmp,"xrp_summary.json")
