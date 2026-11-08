@@ -22,6 +22,10 @@ jobs:
         with:
           distribution: temurin
           java-version: '21'
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
       - name: Install dependencies
         working-directory: android-app
         run: npm install
@@ -41,13 +45,13 @@ jobs:
         run: |
           cd android
           chmod +x gradlew
-          sed -i '/^distributionUrl=/i networkTimeout=120000' gradle/wrapper/gradle-wrapper.properties
-          for attempt in 1 2 3; do
-            ./gradlew --no-daemon assembleDebug && break
-            if [ "$attempt" -eq 3 ]; then exit 1; fi
-            echo "Gradle download/build retry $attempt"
-            sleep 10
-          done
+          sed -i 's/gradle-8\.11\.1-all\.zip/gradle-8.11.1-bin.zip/' gradle/wrapper/gradle-wrapper.properties
+          if grep -q '^networkTimeout=' gradle/wrapper/gradle-wrapper.properties; then
+            sed -i 's/^networkTimeout=.*/networkTimeout=180000/' gradle/wrapper/gradle-wrapper.properties
+          else
+            echo 'networkTimeout=180000' >> gradle/wrapper/gradle-wrapper.properties
+          fi
+          gradle --no-daemon assembleDebug
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
