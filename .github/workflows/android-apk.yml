@@ -41,7 +41,7 @@ jobs:
         run: |
           cd android
           chmod +x gradlew
-          sed -i 's/^distributionUrl=/networkTimeout=120000\\ndistributionUrl=/' gradle/wrapper/gradle-wrapper.properties
+          sed -i '/^distributionUrl=/i networkTimeout=120000' gradle/wrapper/gradle-wrapper.properties
           for attempt in 1 2 3; do
             ./gradlew --no-daemon assembleDebug && break
             if [ "$attempt" -eq 3 ]; then exit 1; fi
