@@ -155,8 +155,8 @@ def _opportunity(candles, context=None, book=None, recent_stats=None):
     atr_pct = _atr_pct(candles)
     # Volatility-adaptive initial exit distances. Floors avoid fee-dominated exits;
     # caps prevent an unusually volatile candle from creating an oversized risk.
-    tp_pct = min(6.0, max(2.0, atr_pct * 2.0))
-    sl_pct = min(3.0, max(1.0, atr_pct * 1.20))
+    tp_pct = min(6.0, max(1.0, atr_pct * 2.0))
+    sl_pct = min(3.0, max(0.5, atr_pct * 1.20))
     tp_pct = min(6.0, max(tp_pct, sl_pct * 1.50))
     net_win = tp_pct - ROUND_TRIP_COST_PCT
     net_loss = sl_pct + ROUND_TRIP_COST_PCT
@@ -195,8 +195,8 @@ def _backtest(candles, name):
             continue
         entry = float(candles[i]["c"])
         atr_pct = _atr_pct(candles[:i + 1])
-        tp_pct = min(6.0, max(2.0, atr_pct * 2.0))
-        sl_pct = min(3.0, max(1.0, atr_pct * 1.20))
+        tp_pct = min(6.0, max(1.0, atr_pct * 2.0))
+        sl_pct = min(3.0, max(0.5, atr_pct * 1.20))
         tp_pct = min(6.0, max(tp_pct, sl_pct * 1.50))
         tp = entry * (1.0 + tp_pct / 100.0)
         sl = entry * (1.0 - sl_pct / 100.0)
