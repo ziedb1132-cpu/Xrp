@@ -32,9 +32,9 @@ class ScalpingEngineTests(unittest.TestCase):
         )
         self.assertTrue(diagnostics["eligible"], diagnostics)
         self.assertEqual(candidate["strategy_type"], "SCALPING")
-        self.assertGreaterEqual(candidate["tp_distance_pct"], 0.90)
+        self.assertGreaterEqual(candidate["tp_distance_pct"], 1.00)
         self.assertLessEqual(candidate["tp_distance_pct"], 1.50)
-        self.assertGreaterEqual(candidate["sl_distance_pct"], 0.40)
+        self.assertGreaterEqual(candidate["sl_distance_pct"], 0.50)
         self.assertLessEqual(candidate["sl_distance_pct"], 0.80)
         self.assertGreaterEqual(candidate["tp_distance_pct"], candidate["sl_distance_pct"] * 1.5)
         self.assertEqual(candidate["entry_method"], "MARKET")
@@ -47,8 +47,8 @@ class ScalpingEngineTests(unittest.TestCase):
             "strategy_name": "XRP_SCALPING_1M_5M", "timeframe": "1m",
         }, 1.0, 123, state)
         opened = state["open_signal"]
-        self.assertAlmostEqual(opened["tp_distance_pct"], 0.90)
-        self.assertAlmostEqual(opened["sl_distance_pct"], 0.40)
+        self.assertAlmostEqual(opened["tp_distance_pct"], 1.00)
+        self.assertAlmostEqual(opened["sl_distance_pct"], 0.50)
         self.assertEqual(opened["strategy_type"], "SCALPING")
 
     def test_wide_spread_blocks_scalping(self):
