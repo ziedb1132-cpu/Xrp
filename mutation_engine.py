@@ -23,8 +23,8 @@ def _normalize(genome):
     family = g.get("family", FAMILIES[0])
     if family not in FAMILIES:
         family = FAMILIES[0]
-    sl = _clamp(g.get("sl_pct", 1.5), 1.0, 3.0)
-    tp = _clamp(g.get("tp_pct", 3.0), max(2.0, sl * 1.5), 6.0)
+    sl = _clamp(g.get("sl_pct", 1.0), 0.5, 3.0)
+    tp = _clamp(g.get("tp_pct", 2.0), max(1.0, sl * 1.5), 6.0)
     return {
         "family": family,
         "momentum_min": _clamp(g.get("momentum_min", 0.0015), 0.0005, 0.006),
@@ -141,8 +141,8 @@ def _random_genome(rng):
         "volume_min": rng.uniform(1.0, 2.5),
         "rsi_low": rng.uniform(25, 50),
         "rsi_high": rng.uniform(55, 78),
-        "tp_pct": rng.uniform(2.0, 6.0),
-        "sl_pct": rng.uniform(1.0, 3.0),
+        "tp_pct": rng.uniform(1.0, 6.0),
+        "sl_pct": rng.uniform(0.5, 3.0),
         "trail_activation_pct": rng.uniform(20, 70),
         "trail_gap_pct": rng.uniform(0.25, 1.5),
     })
