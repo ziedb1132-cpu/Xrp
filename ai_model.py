@@ -393,8 +393,8 @@ def predict_exit_policy(features, entry_price, atr_pct=0.0):
         # Blend learned excursion estimates with an ATR floor so the model cannot
         # place exits inside ordinary market noise. Keep strict risk bounds.
         atr_pct = max(0.0, float(atr_pct or 0.0))
-        tp_floor = min(6.0, max(2.0, atr_pct * 2.0))
-        sl_floor = min(3.0, max(1.0, atr_pct * 1.20))
+        tp_floor = min(6.0, max(1.0, atr_pct * 2.0))
+        sl_floor = min(3.0, max(0.5, atr_pct * 1.20))
         tp_pct = min(6.0, max(tp_floor, mfe * 0.75))
         sl_pct = min(3.0, max(sl_floor, mae * 0.85))
         tp_pct = min(6.0, max(tp_pct, sl_pct * 1.50))
