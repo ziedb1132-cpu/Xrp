@@ -84,12 +84,12 @@ def _open(p,price,now,s):
     # Scalping has its own small, fee-aware envelope; legacy signals keep their original bounds.
     is_scalp = p.get("strategy_type") == "SCALPING"
     if is_scalp:
-        tp_distance=min(1.50,max(0.90,float(p.get("tp_distance_pct",0.90) or 0.90)))
-        sl_distance=min(0.80,max(0.40,float(p.get("sl_distance_pct",0.40) or 0.40)))
+        tp_distance=min(1.50,max(1.00,float(p.get("tp_distance_pct",1.00) or 1.00)))
+        sl_distance=min(0.80,max(0.50,float(p.get("sl_distance_pct",0.50) or 0.50)))
         tp_distance=min(1.50,max(tp_distance,sl_distance*1.50))
     else:
-        tp_distance=min(6.0,max(2.0,float(p.get("tp_distance_pct",2.0) or 2.0)))
-        sl_distance=min(3.0,max(1.0,float(p.get("sl_distance_pct",1.0) or 1.0)))
+        tp_distance=min(6.0,max(1.0,float(p.get("tp_distance_pct",1.0) or 1.0)))
+        sl_distance=min(3.0,max(0.5,float(p.get("sl_distance_pct",0.5) or 0.5)))
         tp_distance=min(6.0,max(tp_distance,sl_distance*1.50))
     tp=entry*(1+tp_distance/100.0);sl=entry*(1-sl_distance/100.0)
     a={"id":s["total_signals"],"symbol":"XRP-USDT","side":"BUY","entry":entry,"tp":tp,"sl":sl,
@@ -160,8 +160,8 @@ class SignalManager:
             else:
                 entry=float(a.get("entry",price))
                 is_scalp = a.get("strategy_type") == "SCALPING"
-                tp_distance=(min(1.50,max(0.90,float(a.get("tp_distance_pct",0.90) or 0.90))) if is_scalp
-                              else min(6.0,max(2.0,float(a.get("tp_distance_pct",2.0) or 2.0))))
+                tp_distance=(min(1.50,max(1.00,float(a.get("tp_distance_pct",1.00) or 1.00))) if is_scalp
+                              else min(6.0,max(1.0,float(a.get("tp_distance_pct",1.0) or 1.0))))
                 activation_pct=float(a.get("trailing_activation_pct",30.0) or 30.0)
                 activation_price=entry*(1.0+(tp_distance*activation_pct/100.0)/100.0)
                 if price>=activation_price:
@@ -237,8 +237,8 @@ class SignalManager:
         ai_exit_closed=[x for x in closed if x.get("exit_policy_source")=="AI_LEARNED_EXIT_POLICY"]
         scalp_closed=[x for x in closed if x.get("strategy_type")=="SCALPING"]
         summary={"price":s.get("price"),"current_price":s.get("price"),"closed_signals":len(closed),
-          "risk_policy":{"standard":{"tp_min_pct":2.0,"tp_max_pct":6.0,"sl_min_pct":1.0,"sl_max_pct":3.0},
-                         "scalping":{"tp_min_pct":0.90,"tp_max_pct":1.50,"sl_min_pct":0.40,"sl_max_pct":0.80},
+          "risk_policy":{"standard":{"tp_min_pct":1.0,"tp_max_pct":6.0,"sl_min_pct":0.5,"sl_max_pct":3.0},
+                         "scalping":{"tp_min_pct":1.0,"tp_max_pct":1.50,"sl_min_pct":0.5,"sl_max_pct":0.80},
                          "min_reward_risk_ratio":1.5,"applies_to":"new_signals_only"},
           "ai_performance":_performance_group(ai_closed),
           "pre_ai_performance":_performance_group(pre_ai_closed),
