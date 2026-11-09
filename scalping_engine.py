@@ -83,8 +83,8 @@ def evaluate_scalping(candles_1m, candles_5m, book, price):
                        "confirmations": confirmations, "checks": checks}
 
     # Dedicated scalp envelope: targets are deliberately above estimated round-trip costs.
-    sl_pct = min(0.80, max(0.40, atr * 1.15))
-    tp_pct = min(1.50, max(0.90, atr * 2.20, sl_pct * 1.60))
+    sl_pct = min(0.80, max(0.50, atr * 1.15))
+    tp_pct = min(1.50, max(1.00, atr * 2.20, sl_pct * 1.60))
     if tp_pct < sl_pct * 1.50 or tp_pct <= ROUND_TRIP_COST_PCT * 2.0:
         return None, {"eligible": False, "reason": "reward_cost_ratio_failed", "tp_pct": tp_pct, "sl_pct": sl_pct}
 
